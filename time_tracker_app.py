@@ -39,7 +39,7 @@ CVU_SURFACE  = "#282828"   # Card / chart background
 CVU_BORDER   = "#4F4F4F"   # Grid lines, dividers
 CVU_WHITE    = "#FCFCFC"   # Primary text
 CVU_GRAY     = "#9E9E9E"   # Secondary text / axis labels
-CVU_GREEN    = "#B4E817"   # Volt Green – primary accent
+CVU_GREEN    = "#66CC00"   # Volt Green – primary accent
 
 # Ordered accent palette for chart series (Indigo, Solar, Aqua, Teal, Plum, Ember)
 CVU_PALETTE = [
@@ -777,7 +777,7 @@ def view_team(df: pd.DataFrame):
             ))
             figA.update_layout(**_chart_base(
                 height=300,
-                title=dict(text="Research & Programs vs Other",
+                title=dict(text="Research (900s) vs Other",
                            font=dict(color=CVU_WHITE, size=13), x=0.5, xanchor="center"),
                 showlegend=True,
                 legend=dict(orientation="h", y=-0.08, x=0.5, xanchor="center"),
