@@ -1206,8 +1206,6 @@ def main():
             load_all.clear()
             st.rerun()
 
-        st.caption(f"Data folder: `{DATA_DIR.name}/`")
-
     # ── Load data (cached) ────────────────────────────────────────────────────
     df = load_all()
 
