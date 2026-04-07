@@ -850,8 +850,12 @@ def view_team(df: pd.DataFrame):
     # CHART 5: Weekly team pace
     # ─────────────────────────────────────────────────────────────────────────
     st.markdown("##### Weekly Team Pace")
-    weekly     = fdf.groupby("week")["hours"].sum().reset_index().sort_values("week")
-    avg_weekly = weekly["hours"].mean()
+    weekly = fdf.groupby("week")["hours"].sum().reset_index().sort_values("week")
+
+    # Average only weeks up to and including the current week
+    current_week_str = str(pd.Period(date.today(), freq="W"))
+    completed_weeks  = weekly[weekly["week"] <= current_week_str]
+    avg_weekly       = completed_weeks["hours"].mean() if not completed_weeks.empty else 0
 
     fig5 = go.Figure()
     fig5.add_trace(go.Bar(
@@ -862,14 +866,16 @@ def view_team(df: pd.DataFrame):
         name="Weekly Hours",
         hovertemplate="Week: %{x}<br>Hours: %{y:.1f}<extra></extra>",
     ))
-    fig5.add_hline(
-        y=avg_weekly,
-        line_dash="dot",
-        line_color=CVU_PALETTE[0],
-        annotation_text=f"Avg {avg_weekly:.1f} hrs / wk",
-        annotation_font_color=CVU_PALETTE[0],
-        annotation_position="top right",
-    )
+    # Draw the average line only across completed weeks (not future empty weeks)
+    if not completed_weeks.empty:
+        fig5.add_trace(go.Scatter(
+            x=[completed_weeks["week"].iloc[0], completed_weeks["week"].iloc[-1]],
+            y=[avg_weekly, avg_weekly],
+            mode="lines",
+            line=dict(color=CVU_PALETTE[0], width=2, dash="dot"),
+            name=f"Avg {avg_weekly:.1f} hrs / wk",
+            hovertemplate=f"Avg (completed weeks): {avg_weekly:.1f} hrs<extra></extra>",
+        ))
     fig5.update_layout(**_chart_base(
         height=320,
         xaxis=dict(tickangle=-40, tickfont=dict(color=CVU_GRAY),
