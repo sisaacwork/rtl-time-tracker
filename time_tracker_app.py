@@ -476,7 +476,7 @@ def view_daily_entry(person: str):
     if st.button("Save Entry", type="primary", use_container_width=True):
         ok, msg = save_hours(person, selected, new_vals)
         if ok:
-            st.success(msg)
+            st.toast("Entry saved successfully.")
             st.rerun()
         else:
             st.error(msg)
@@ -939,8 +939,13 @@ def _hide_sidebar():
 def _check_auth() -> bool:
     """
     Show a password screen if not yet authenticated.
-    Password is read from st.secrets["APP_PASSWORD"] (falls back to 'rtl2026' locally).
-    Returns True if the user is authenticated.
+
+    Two passwords are supported:
+      APP_PASSWORD   → staff role  (landing page → time entry)
+      ADMIN_PASSWORD → admin role  (straight to dashboard, read-only)
+
+    Both fall back to local defaults if not set in st.secrets.
+    Returns True once authenticated.
     """
     if st.session_state.get("authenticated"):
         return True
@@ -964,11 +969,21 @@ def _check_auth() -> bool:
                             label_visibility="collapsed")
         if st.button("Sign In", type="primary", use_container_width=True):
             try:
-                expected = st.secrets["APP_PASSWORD"]
+                staff_pwd = st.secrets["APP_PASSWORD"]
             except Exception:
-                expected = "rtl2026"   # local fallback
-            if pwd == expected:
+                staff_pwd = "rtl2026"
+            try:
+                admin_pwd = st.secrets["ADMIN_PASSWORD"]
+            except Exception:
+                admin_pwd = "rtladmin"
+
+            if pwd == staff_pwd:
                 st.session_state["authenticated"] = True
+                st.session_state["role"] = "staff"
+                st.rerun()
+            elif pwd == admin_pwd:
+                st.session_state["authenticated"] = True
+                st.session_state["role"] = "admin"
                 st.rerun()
             else:
                 st.error("Incorrect password.")
@@ -1030,6 +1045,33 @@ def main():
     # ── Auth gate ─────────────────────────────────────────────────────────────
     if not _check_auth():
         return
+
+    role = st.session_state.get("role", "staff")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # ADMIN (C-LEVEL) ROUTE — dashboard only, no staff picker
+    # ══════════════════════════════════════════════════════════════════════════
+    if role == "admin":
+        with st.sidebar:
+            st.title("RTL Time Tracker")
+            st.divider()
+            st.caption("Executive Review")
+            st.divider()
+            if st.button("Refresh Data", use_container_width=True):
+                load_all.clear()
+                st.rerun()
+            st.divider()
+            if st.button("Sign Out", use_container_width=True):
+                st.session_state.clear()
+                st.rerun()
+
+        st.title("Team Overview")
+        view_team(load_all())
+        return
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # STAFF ROUTE
+    # ══════════════════════════════════════════════════════════════════════════
 
     # ── Landing page (no person chosen yet) ───────────────────────────────────
     if not st.session_state.get("person"):
