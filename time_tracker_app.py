@@ -617,9 +617,9 @@ def view_history(person: str, df: pd.DataFrame):
     ))
     fig_cat.update_layout(**_chart_base(
         title=dict(text="Hours by Category", font=dict(color=CVU_WHITE, size=14)),
-        height=max(260, len(cat_df) * 38),
+        height=max(300, len(cat_df) * 55),
         yaxis=dict(automargin=True, tickfont=dict(color=CVU_WHITE, size=11),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER, dtick=1),
+                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
         xaxis=dict(title="Hours", tickfont=dict(color=CVU_GRAY),
                    gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
     ))
@@ -740,9 +740,9 @@ def view_team(df: pd.DataFrame):
         hovertemplate="%{y}<br>Hours: %{x:.1f}<extra></extra>",
     ))
     fig1.update_layout(**_chart_base(
-        height=max(300, len(cat_df) * 42),
+        height=max(300, len(cat_df) * 55),
         yaxis=dict(automargin=True, tickfont=dict(color=CVU_WHITE, size=11),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER, dtick=1),
+                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
         xaxis=dict(title="Total Hours", tickfont=dict(color=CVU_GRAY),
                    gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
     ))
@@ -900,9 +900,9 @@ def view_team(df: pd.DataFrame):
         hovertemplate="%{y}<br>Est. Cost: $%{x:,.0f}<extra></extra>",
     ))
     fig6.update_layout(**_chart_base(
-        height=max(300, len(cost_df) * 42),
+        height=max(300, len(cost_df) * 55),
         yaxis=dict(automargin=True, tickfont=dict(color=CVU_WHITE, size=11),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER, dtick=1),
+                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
         xaxis=dict(title=f"Estimated Cost (USD @ ${BLENDED_RATE:.0f}/hr)",
                    tickprefix="$", tickfont=dict(color=CVU_GRAY),
                    gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
