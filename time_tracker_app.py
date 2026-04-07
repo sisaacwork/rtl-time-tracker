@@ -134,6 +134,18 @@ GITHUB_OWNER  = "sisaacwork"
 GITHUB_REPO   = "rtl-time-tracker"
 GITHUB_BRANCH = "main"
 
+# Codes to treat as absences — excluded from the 900s/other and funded/unfunded charts
+ABSENCE_CODES = {"120", "121", "122", "123", "124"}
+
+# Sub-codes that count as externally funded work
+FUNDED_CODES = {
+    "903b", "903c",
+    "904a", "904b",
+    "905a", "905b",
+    "906a", "906b",
+    "910", "915", "916", "917",
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 # GITHUB / CLOUD HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -230,6 +242,19 @@ def category_code(task: str) -> str:
     if t and t[0].isdigit():
         return t[0] + "00"
     return "Other"
+
+
+def task_subcode(task: str) -> str:
+    """
+    Extract the full alphanumeric sub-code from a task name.
+    e.g. '- 903b: CTBUHx Chicago' → '903b'
+         '- 120: Annual Leave'    → '120'
+    Returns an empty string if no leading code is found.
+    """
+    import re
+    t = task.lstrip("- ").strip()
+    m = re.match(r"^(\d+[a-z]*)", t, re.IGNORECASE)
+    return m.group(1).lower() if m else ""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -724,6 +749,76 @@ def view_team(df: pd.DataFrame):
     cat_color_map = {cat: CVU_PALETTE[i % len(CVU_PALETTE)] for i, cat in enumerate(cats)}
     staff_list    = sorted(fdf["person"].unique())
     staff_colors  = {s: CVU_PALETTE[i % len(CVU_PALETTE)] for i, s in enumerate(staff_list)}
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # CHART A + B: Summary donut pair — 900s split & funded/unfunded split
+    # Absence codes (120-124) are excluded from both charts.
+    # ─────────────────────────────────────────────────────────────────────────
+    st.markdown("##### Time Allocation Summary")
+    non_absence = fdf[~fdf["task"].apply(lambda t: task_subcode(t) in ABSENCE_CODES)]
+
+    donut_left, donut_right = st.columns(2)
+
+    # ── Donut A: 900-series vs all other codes ────────────────────────────────
+    with donut_left:
+        hrs_900   = non_absence[non_absence["code"] == "900"]["hours"].sum()
+        hrs_other = non_absence[non_absence["code"] != "900"]["hours"].sum()
+        total_ab  = hrs_900 + hrs_other
+
+        if total_ab > 0:
+            figA = go.Figure(go.Pie(
+                labels=["900-Series", "Other Codes"],
+                values=[hrs_900, hrs_other],
+                hole=0.58,
+                marker_colors=[CVU_GREEN, CVU_PALETTE[0]],
+                hovertemplate="%{label}<br>%{value:.1f} hrs (%{percent})<extra></extra>",
+                textinfo="percent",
+                textfont=dict(color=CVU_WHITE, size=13, family="Inter, Arial, sans-serif"),
+            ))
+            figA.update_layout(**_chart_base(
+                height=300,
+                title=dict(text="Research & Programs vs Other",
+                           font=dict(color=CVU_WHITE, size=13), x=0.5, xanchor="center"),
+                showlegend=True,
+                legend=dict(orientation="h", y=-0.08, x=0.5, xanchor="center"),
+                margin=dict(t=50, b=40, l=20, r=20),
+            ))
+            st.plotly_chart(figA, use_container_width=True)
+        else:
+            st.info("No data for this chart.")
+
+    # ── Donut B: Funded vs Unfunded ───────────────────────────────────────────
+    with donut_right:
+        non_absence["_funded"] = non_absence["task"].apply(
+            lambda t: task_subcode(t) in FUNDED_CODES
+        )
+        hrs_funded   = non_absence[non_absence["_funded"]]["hours"].sum()
+        hrs_unfunded = non_absence[~non_absence["_funded"]]["hours"].sum()
+        total_fu     = hrs_funded + hrs_unfunded
+
+        if total_fu > 0:
+            figB = go.Figure(go.Pie(
+                labels=["Funded", "Unfunded"],
+                values=[hrs_funded, hrs_unfunded],
+                hole=0.58,
+                marker_colors=[CVU_GREEN, CVU_PALETTE[1]],
+                hovertemplate="%{label}<br>%{value:.1f} hrs (%{percent})<extra></extra>",
+                textinfo="percent",
+                textfont=dict(color=CVU_WHITE, size=13, family="Inter, Arial, sans-serif"),
+            ))
+            figB.update_layout(**_chart_base(
+                height=300,
+                title=dict(text="Funded vs Unfunded Time",
+                           font=dict(color=CVU_WHITE, size=13), x=0.5, xanchor="center"),
+                showlegend=True,
+                legend=dict(orientation="h", y=-0.08, x=0.5, xanchor="center"),
+                margin=dict(t=50, b=40, l=20, r=20),
+            ))
+            st.plotly_chart(figB, use_container_width=True)
+        else:
+            st.info("No data for this chart.")
+
+    st.divider()
 
     # ─────────────────────────────────────────────────────────────────────────
     # CHART 1: Hours by category (horizontal bar)
