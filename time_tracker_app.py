@@ -930,10 +930,118 @@ def view_team(df: pd.DataFrame):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# AUTH — simple password gate
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _hide_sidebar():
+    st.markdown(
+        "<style>section[data-testid='stSidebar']{display:none}</style>",
+        unsafe_allow_html=True,
+    )
+
+
+def _check_auth() -> bool:
+    """
+    Show a password screen if not yet authenticated.
+    Password is read from st.secrets["APP_PASSWORD"] (falls back to 'rtl2026' locally).
+    Returns True if the user is authenticated.
+    """
+    if st.session_state.get("authenticated"):
+        return True
+
+    _hide_sidebar()
+
+    _, col, _ = st.columns([1, 1.6, 1])
+    with col:
+        st.markdown("<div style='padding-top:80px'></div>", unsafe_allow_html=True)
+        st.markdown(
+            "<h2 style='color:#FCFCFC;font-family:Inter,Arial,sans-serif;"
+            "font-weight:600;margin-bottom:4px'>RTL Time Tracker</h2>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<p style='color:#9E9E9E;font-family:Inter,Arial,sans-serif;"
+            "margin-bottom:28px'>Council on Vertical Urbanism</p>",
+            unsafe_allow_html=True,
+        )
+        pwd = st.text_input("Password", type="password", placeholder="Enter password",
+                            label_visibility="collapsed")
+        if st.button("Sign In", type="primary", use_container_width=True):
+            try:
+                expected = st.secrets["APP_PASSWORD"]
+            except Exception:
+                expected = "rtl2026"   # local fallback
+            if pwd == expected:
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect password.")
+    return False
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LANDING PAGE — staff member selection
+# ══════════════════════════════════════════════════════════════════════════════
+
+def view_landing():
+    """Welcome screen — staff pick their name before entering time."""
+    _hide_sidebar()
+
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        st.markdown("<div style='padding-top:60px'></div>", unsafe_allow_html=True)
+        st.markdown(
+            "<h2 style='color:#FCFCFC;font-family:Inter,Arial,sans-serif;"
+            "font-weight:600;margin-bottom:6px'>Who are you?</h2>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<p style='color:#9E9E9E;font-family:Inter,Arial,sans-serif;"
+            "margin-bottom:32px'>Select your name to start entering your time.</p>",
+            unsafe_allow_html=True,
+        )
+
+        names = list(STAFF.keys())
+        row1, row2 = st.columns(2), st.columns(2)
+        for i, name in enumerate(names):
+            with (row1 if i < 2 else row2)[i % 2]:
+                st.markdown(
+                    f"<div style='background:#282828;border:1px solid #4F4F4F;"
+                    f"border-left:4px solid #B4E817;border-radius:6px;"
+                    f"padding:18px 16px;margin-bottom:4px;'>"
+                    f"<span style='color:#FCFCFC;font-family:Inter,Arial,sans-serif;"
+                    f"font-weight:600;font-size:1rem'>{name}</span></div>",
+                    unsafe_allow_html=True,
+                )
+                if st.button("Select", key=f"land_{name}", use_container_width=True):
+                    st.session_state["person"] = name
+                    st.rerun()
+
+        st.markdown("<div style='margin-top:24px'></div>", unsafe_allow_html=True)
+        st.markdown(
+            "<p style='color:#4F4F4F;font-size:0.75rem;text-align:center;"
+            "font-family:Inter,Arial,sans-serif'>Manager? Use the Team Overview "
+            "in the sidebar after selecting any name.</p>",
+            unsafe_allow_html=True,
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR + MAIN APP
 # ══════════════════════════════════════════════════════════════════════════════
 
 def main():
+    # ── Auth gate ─────────────────────────────────────────────────────────────
+    if not _check_auth():
+        return
+
+    # ── Landing page (no person chosen yet) ───────────────────────────────────
+    if not st.session_state.get("person"):
+        view_landing()
+        return
+
+    person = st.session_state["person"]
+
     # ── Sidebar ───────────────────────────────────────────────────────────────
     with st.sidebar:
         st.title("RTL Time Tracker")
@@ -946,15 +1054,19 @@ def main():
         )
 
         st.divider()
-        person = st.selectbox("Staff Member", list(STAFF.keys()))
+
+        st.caption(f"Signed in as **{person}**")
+        if st.button("Change User", use_container_width=True):
+            st.session_state["person"] = None
+            st.rerun()
 
         st.divider()
+
         if st.button("Refresh Data", use_container_width=True):
             load_all.clear()
             st.rerun()
 
         st.caption(f"Data folder: `{DATA_DIR.name}/`")
-        st.caption("Files are read from and saved directly to the Excel trackers.")
 
     # ── Load data (cached) ────────────────────────────────────────────────────
     df = load_all()
