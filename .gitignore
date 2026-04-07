@@ -1,0 +1,16 @@
+# Streamlit secrets — never commit the real secrets file
+.streamlit/secrets.toml
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment files
+.env
+
+# macOS
+.DS_Store
+
+# Sync log
+rtl_sync.log
