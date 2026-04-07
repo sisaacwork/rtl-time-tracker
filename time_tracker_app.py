@@ -445,39 +445,35 @@ def view_daily_entry(person: str):
         "enter hours in 0.25 increments (0.25 = 15 min, 1.0 = 1 hr)"
     )
 
+    # Inputs live outside a form so the total updates on every change
     new_vals = {}
-    with st.form("daily_form"):
-        for parent, kids in groups:
-            if not kids:
-                continue
-            st.markdown(
-                f"<div class='cat-header'>{parent}</div>",
-                unsafe_allow_html=True,
-            )
-            for task, cur_h in kids:
-                label = short_name(task)
-                left, right = st.columns([5, 1])
-                left.markdown(f"&nbsp;&nbsp;&nbsp;{label}")
-                v = right.number_input(
-                    label, label_visibility="collapsed",
-                    min_value=0.0, max_value=24.0, step=0.25,
-                    value=float(cur_h),
-                    key=f"de_{task}_{selected}",
-                )
-                new_vals[task] = v
-
-        total    = sum(new_vals.values())
-        overtime = max(0.0, total - 8.0)
-        st.divider()
-        tcol1, tcol2 = st.columns(2)
-        tcol1.metric("Daily Total", f"{total:.2f} h")
-        tcol2.metric("Overtime",    f"{overtime:.2f} h", delta_color="inverse")
-
-        submitted = st.form_submit_button(
-            "Save Entry", use_container_width=True, type="primary"
+    for parent, kids in groups:
+        if not kids:
+            continue
+        st.markdown(
+            f"<div class='cat-header'>{parent}</div>",
+            unsafe_allow_html=True,
         )
+        for task, cur_h in kids:
+            label = short_name(task)
+            left, right = st.columns([5, 1])
+            left.markdown(f"&nbsp;&nbsp;&nbsp;{label}")
+            v = right.number_input(
+                label, label_visibility="collapsed",
+                min_value=0.0, max_value=24.0, step=0.25,
+                value=float(cur_h),
+                key=f"de_{task}_{selected}",
+            )
+            new_vals[task] = v
 
-    if submitted:
+    total    = sum(new_vals.values())
+    overtime = max(0.0, total - 8.0)
+    st.divider()
+    tcol1, tcol2 = st.columns(2)
+    tcol1.metric("Daily Total", f"{total:.2f} h")
+    tcol2.metric("Overtime",    f"{overtime:.2f} h", delta_color="inverse")
+
+    if st.button("Save Entry", type="primary", use_container_width=True):
         ok, msg = save_hours(person, selected, new_vals)
         if ok:
             st.success(msg)
