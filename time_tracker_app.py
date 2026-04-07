@@ -693,11 +693,18 @@ def view_team(df: pd.DataFrame):
         all_staff = sorted(df["person"].unique())
         sel_staff = st.multiselect("Staff members", all_staff, default=all_staff)
 
+    include_future = st.checkbox(
+        "Include future entries (e.g. pre-entered vacation)",
+        value=False,
+    )
+
     fdf = df.copy()
     if sel_q != "All":
         fdf = fdf[fdf["quarter"] == sel_q]
     if sel_staff:
         fdf = fdf[fdf["person"].isin(sel_staff)]
+    if not include_future:
+        fdf = fdf[fdf["date"].dt.date <= date.today()]
     fdf = fdf[fdf["task"].str.startswith("- ")]   # child rows only
 
     if fdf.empty:
