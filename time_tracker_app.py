@@ -369,7 +369,7 @@ def _chart_base(**overrides) -> dict:
     """
     layout = dict(
         paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor=CVU_SURFACE,
+        plot_bgcolor=CVU_BLACK,
         font=dict(family="Inter, Arial, sans-serif", color=CVU_WHITE, size=12),
         xaxis=dict(
             gridcolor=CVU_BORDER,
@@ -619,7 +619,7 @@ def view_history(person: str, df: pd.DataFrame):
         title=dict(text="Hours by Category", font=dict(color=CVU_WHITE, size=14)),
         height=max(260, len(cat_df) * 38),
         yaxis=dict(automargin=True, tickfont=dict(color=CVU_WHITE, size=11),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER, dtick=1),
         xaxis=dict(title="Hours", tickfont=dict(color=CVU_GRAY),
                    gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
     ))
@@ -742,7 +742,7 @@ def view_team(df: pd.DataFrame):
     fig1.update_layout(**_chart_base(
         height=max(300, len(cat_df) * 42),
         yaxis=dict(automargin=True, tickfont=dict(color=CVU_WHITE, size=11),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER, dtick=1),
         xaxis=dict(title="Total Hours", tickfont=dict(color=CVU_GRAY),
                    gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
     ))
@@ -902,7 +902,7 @@ def view_team(df: pd.DataFrame):
     fig6.update_layout(**_chart_base(
         height=max(300, len(cost_df) * 42),
         yaxis=dict(automargin=True, tickfont=dict(color=CVU_WHITE, size=11),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER, dtick=1),
         xaxis=dict(title=f"Estimated Cost (USD @ ${BLENDED_RATE:.0f}/hr)",
                    tickprefix="$", tickfont=dict(color=CVU_GRAY),
                    gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
