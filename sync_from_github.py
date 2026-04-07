@@ -45,7 +45,7 @@ GITHUB_REPO   = "rtl-time-tracker"
 # Replace the placeholder below with your actual path.
 ONEDRIVE_PATH = os.environ.get(
     "ONEDRIVE_PATH",
-    "/Users/sisaacwork/Library/CloudStorage/OneDrive-REPLACE-THIS/RTL/2026"
+    "/Users/sisaacwork/Library/CloudStorage/OneDrive-CouncilonTallBuildingsandUrbanHabitat/Staff - Research/Time Tracking/2026"
 )
 
 TRACKER_FILES = [
