@@ -115,7 +115,13 @@ div[data-testid="stTabs"] button[aria-selected="true"] {
 # CONFIGURATION
 # ══════════════════════════════════════════════════════════════════════════════
 
-DATA_DIR = Path(__file__).parent   # app lives alongside the .xlsx files
+# When running locally, set DATA_DIR in .streamlit/secrets.toml to point at
+# your OneDrive folder so reads and writes go to the right place.
+# On Streamlit Cloud this falls back to the repo directory (files come from GitHub).
+try:
+    DATA_DIR = Path(st.secrets["DATA_DIR"])
+except Exception:
+    DATA_DIR = Path(__file__).parent
 
 STAFF = {
     "D. Safarik":  "DSafarik_2026TimeTracking.xlsx",
