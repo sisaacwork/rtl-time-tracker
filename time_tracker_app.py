@@ -119,7 +119,11 @@ div[data-testid="stTabs"] button[aria-selected="true"] {
 # your OneDrive folder so reads and writes go to the right place.
 # On Streamlit Cloud this falls back to the repo directory (files come from GitHub).
 try:
-    DATA_DIR = Path(st.secrets["DATA_DIR"])
+    _candidate = Path(st.secrets["DATA_DIR"])
+    # Only use the secret path if it actually exists on this machine.
+    # On Streamlit Cloud the OneDrive path won't exist, so it falls back
+    # to the repo directory where the Excel files are committed.
+    DATA_DIR = _candidate if _candidate.exists() else Path(__file__).parent
 except Exception:
     DATA_DIR = Path(__file__).parent
 
