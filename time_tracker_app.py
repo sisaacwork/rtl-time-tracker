@@ -221,23 +221,29 @@ def _github_commit(filename: str, content_bytes: bytes) -> tuple:
         "Authorization": f"token {token}",
         "Accept":        "application/vnd.github.v3+json",
     }
+    encoded = base64.b64encode(content_bytes).decode()
+    commit_msg = (
+        f"Update: {filename} "
+        f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC]"
+    )
 
-    # GET current SHA (required for updating an existing file)
-    r   = requests.get(url, headers=headers)
-    sha = r.json().get("sha") if r.status_code == 200 else None
+    def _fetch_sha():
+        # Always pin to the target branch so the SHA matches exactly.
+        r = requests.get(f"{url}?ref={GITHUB_BRANCH}", headers=headers)
+        return r.json().get("sha") if r.status_code == 200 else None
 
-    payload = {
-        "message": (
-            f"Time entry update: {filename} "
-            f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC]"
-        ),
-        "content": base64.b64encode(content_bytes).decode(),
-        "branch":  GITHUB_BRANCH,
-    }
-    if sha:
-        payload["sha"] = sha
+    def _do_put(sha):
+        payload = {"message": commit_msg, "content": encoded, "branch": GITHUB_BRANCH}
+        if sha:
+            payload["sha"] = sha
+        return requests.put(url, headers=headers, json=payload)
 
-    resp = requests.put(url, headers=headers, json=payload)
+    resp = _do_put(_fetch_sha())
+
+    # If we get a 409 (SHA conflict), re-fetch and retry once.
+    if resp.status_code == 409:
+        resp = _do_put(_fetch_sha())
+
     if resp.status_code in (200, 201):
         return True, "Saved to GitHub."
     return False, f"GitHub error {resp.status_code}: {resp.text[:200]}"
@@ -1315,13 +1321,15 @@ def view_financial_kpis():
     net          = paid_income - total_exp - ytd_staff
 
     st.markdown("##### Financial Overview")
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
-    k1.metric("Daily Burn Rate",      f"${daily_burn:,.0f}/day" if daily_burn else "No staff cost set")
-    k2.metric("YTD Staff Cost",       f"${ytd_staff:,.0f}")
-    k3.metric("Income — Paid",        f"${paid_income:,.0f}")
-    k4.metric("Income — Not Yet Paid",f"${soft_income:,.0f}")
-    k5.metric("Other Expenses YTD",   f"${total_exp:,.0f}")
-    k6.metric("Net (Paid - Costs)",   f"${net:,.0f}")
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Daily Burn Rate",    f"${daily_burn:,.0f} / day" if daily_burn else "Set staff cost above")
+    k2.metric("YTD Staff Cost",     f"${ytd_staff:,.0f}")
+    k3.metric("Income — Paid",      f"${paid_income:,.0f}")
+
+    k4, k5, k6 = st.columns(3)
+    k4.metric("Income — Pipeline",  f"${soft_income:,.0f}")
+    k5.metric("Other Expenses YTD", f"${total_exp:,.0f}")
+    k6.metric("Net (Paid - Costs)", f"${net:,.0f}")
     st.divider()
 
     # ── Add Transaction ───────────────────────────────────────────────────────
