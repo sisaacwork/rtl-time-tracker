@@ -1435,6 +1435,13 @@ def view_financial_kpis():
         if annual_goal_val > 0 and not income_txns.empty:
             seg_data = {s: income_txns[income_txns["status"] == s]["amount"].sum()
                         for s in INCOME_STATUSES}
+
+            total_all       = sum(seg_data.values())
+            total_confirmed = sum(seg_data.get(s, 0)
+                                  for s in ("Paid", "Invoiced", "Contracted"))
+            pct_all       = min(100.0, total_all       / annual_goal_val * 100)
+            pct_confirmed = min(100.0, total_confirmed / annual_goal_val * 100)
+
             figB = go.Figure()
             for s in INCOME_STATUSES:
                 figB.add_trace(go.Bar(
@@ -1466,6 +1473,16 @@ def view_financial_kpis():
                 yaxis=dict(showticklabels=False, gridcolor=CVU_BORDER),
             ))
             st.plotly_chart(figB, use_container_width=True)
+
+            # Percentage labels below the chart
+            pa, pb = st.columns(2)
+            pa.metric("All income vs goal",
+                      f"{pct_all:.1f}%",
+                      help="Every status (Paid + Invoiced + Contracted + Verbal + Pipeline) as a % of the annual goal")
+            pb.metric("Confirmed vs goal",
+                      f"{pct_confirmed:.1f}%",
+                      help="Only Paid, Invoiced, and Contracted — excludes Verbal and Pipeline")
+
         elif annual_goal_val == 0:
             st.info("Set an annual income goal in Settings to see progress here.")
 
@@ -1666,24 +1683,69 @@ def view_financial_kpis():
 
     st.divider()
 
-    # ── Transaction Table ─────────────────────────────────────────────────────
+    # ── Transaction Table (editable) ──────────────────────────────────────────
     st.markdown("##### All Transactions")
+    st.caption("Edit any cell directly, then click Save Changes below.")
+
     tf1, tf2, tf3 = st.columns(3)
     f_type   = tf1.selectbox("Filter: Type",   ["All", "Income", "Expense"], key="tbl_type")
     f_status = tf2.selectbox("Filter: Status", ["All"] + INCOME_STATUSES,   key="tbl_status")
     f_code   = tf3.selectbox("Filter: Code",   ["All"] + sorted(txns["code"].unique().tolist()), key="tbl_code")
 
-    tbl = txns.copy()
-    if f_type   != "All": tbl = tbl[tbl["type"]   == f_type]
-    if f_status != "All": tbl = tbl[tbl["status"] == f_status]
-    if f_code   != "All": tbl = tbl[tbl["code"]   == f_code]
+    # Build editable subset — keep original txns index so we can merge back
+    mask = pd.Series(True, index=txns.index)
+    if f_type   != "All": mask &= txns["type"]   == f_type
+    if f_status != "All": mask &= txns["status"] == f_status
+    if f_code   != "All": mask &= txns["code"]   == f_code
 
-    tbl = tbl.sort_values("date", ascending=False).copy()
-    tbl["date"]   = tbl["date"].dt.date
-    tbl["amount"] = tbl["amount"].apply(lambda x: f"${x:,.2f}")
-    tbl = tbl.drop(columns=["id"])
-    tbl.columns   = ["Date", "Type", "Amount", "Code", "Code Name", "Description", "Status", "Notes"]
-    st.dataframe(tbl, hide_index=True, use_container_width=True)
+    edit_df = txns[mask].sort_values("date", ascending=False).drop(columns=["id"]).copy()
+    edit_df["date"] = edit_df["date"].dt.date   # DateColumn expects date objects
+
+    code_options   = list(all_codes.keys())
+    status_options = [""] + INCOME_STATUSES
+
+    edited = st.data_editor(
+        edit_df,
+        use_container_width=True,
+        num_rows="fixed",
+        hide_index=True,
+        column_config={
+            "date":        st.column_config.DateColumn("Date", required=True),
+            "type":        st.column_config.SelectboxColumn(
+                               "Type", options=["Income", "Expense"], required=True),
+            "amount":      st.column_config.NumberColumn(
+                               "Amount ($)", min_value=0.0, step=0.01, format="$%.2f"),
+            "code":        st.column_config.SelectboxColumn("Code", options=code_options),
+            "code_name":   st.column_config.TextColumn("Code Name"),
+            "description": st.column_config.TextColumn("Description"),
+            "status":      st.column_config.SelectboxColumn("Status", options=status_options),
+            "notes":       st.column_config.TextColumn("Notes"),
+        },
+    )
+
+    if st.button("Save Changes", type="primary", use_container_width=True):
+        # Coerce types and auto-fill code_name when code changes
+        edited["date"]   = pd.to_datetime(edited["date"])
+        edited["amount"] = pd.to_numeric(edited["amount"], errors="coerce").fillna(0.0)
+        edited["status"] = edited["status"].fillna("")
+        edited["notes"]  = edited["notes"].fillna("")
+        edited["code_name"] = edited.apply(
+            lambda r: all_codes.get(r["code"], r.get("code_name", r["code"])),
+            axis=1,
+        )
+
+        # Merge edited rows back into the full dataset using the preserved index
+        updated_txns = txns.copy()
+        updated_txns.loc[edited.index, edit_df.columns] = edited
+        updated_txns["id"] = range(1, len(updated_txns) + 1)
+
+        custom_codes = {k: v for k, v in all_codes.items() if k not in ACCOUNTING_CODES}
+        ok, msg = save_finances(updated_txns, dict(settings), custom_codes)
+        if ok:
+            st.toast("Changes saved.")
+            st.rerun()
+        else:
+            st.error(msg)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
