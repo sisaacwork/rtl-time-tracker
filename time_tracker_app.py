@@ -1548,9 +1548,17 @@ def view_financial_kpis():
             hovertemplate="Remaining to goal: $%{x:,.0f}<extra></extra>",
         ))
 
-        # Percentage-complete annotation at the right end of each bar
-        for label, goal, actual in zip(goal_labels, goal_vals, actual_vals):
-            pct = min(100.0, actual / goal * 100) if goal > 0 else 0.0
+        # Percentage-complete annotation — only Paid, Invoiced, Contracted count
+        CONFIRMED_STATUSES = {"Paid", "Invoiced", "Contracted"}
+        for (code, _), label, goal in zip(sorted(code_goal_rows), goal_labels, goal_vals):
+            confirmed = (
+                income_txns[
+                    (income_txns["code"] == code) &
+                    (income_txns["status"].isin(CONFIRMED_STATUSES))
+                ]["amount"].sum()
+                if not income_txns.empty else 0.0
+            )
+            pct = min(100.0, confirmed / goal * 100) if goal > 0 else 0.0
             figD.add_annotation(
                 x=goal, y=label,
                 text=f"  {pct:.0f}%",
