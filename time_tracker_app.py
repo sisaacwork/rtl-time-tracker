@@ -26,7 +26,7 @@ import plotly.graph_objects as go
 # ══════════════════════════════════════════════════════════════════════════════
 
 st.set_page_config(
-    page_title="RTL Time Tracker",
+    page_title="RTL KPI Tracker",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -1780,7 +1780,7 @@ def _check_auth() -> bool:
         st.markdown("<div style='padding-top:80px'></div>", unsafe_allow_html=True)
         st.markdown(
             "<h2 style='color:#FCFCFC;font-family:Inter,Arial,sans-serif;"
-            "font-weight:600;margin-bottom:4px'>RTL Time Tracker</h2>",
+            "font-weight:600;margin-bottom:4px'>RTL KPI Tracker</h2>",
             unsafe_allow_html=True,
         )
         st.markdown(
@@ -1914,7 +1914,7 @@ def main():
 
     # ── Sidebar ───────────────────────────────────────────────────────────────
     with st.sidebar:
-        st.title("RTL Time Tracker")
+        st.title("RTL KPI Tracker")
         st.divider()
 
         view = st.radio(
