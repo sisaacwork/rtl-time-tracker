@@ -280,10 +280,14 @@ def load_all() -> pd.DataFrame:
     """
     records = []
     for person, path in STAFF.items():
-        if not path.exists():
+        if not _is_cloud() and not path.exists():
             st.warning(f"File not found, skipping: {path.name}")
             continue
-        wb = openpyxl.load_workbook(path, data_only=True)
+        try:
+            wb = _fetch_workbook(person, data_only=True)
+        except Exception as e:
+            st.warning(f"Could not load {path.name}: {e}")
+            continue
         ws = wb[TRACKER_SHEET]
         dc = _date_cols(ws)
         tr = _task_rows(ws)
@@ -323,15 +327,41 @@ def load_all() -> pd.DataFrame:
 # PER-PERSON DATA ACCESS
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _fetch_workbook(person: str, data_only: bool = True):
+    """
+    Load a person's workbook.
+    On Streamlit Cloud: fetches the latest bytes directly from GitHub API
+    so the app always reflects the current state of the repo, not a stale
+    snapshot from deploy time.
+    Locally: reads straight from disk as before.
+    """
+    filename = STAFF[person].name
+    if _is_cloud():
+        url = (
+            f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}"
+            f"/contents/{filename}?ref={GITHUB_BRANCH}"
+        )
+        resp = requests.get(url, headers={
+            "Authorization": f"token {_github_token()}",
+            "Accept":        "application/vnd.github.v3+json",
+        })
+        if resp.status_code != 200:
+            raise FileNotFoundError(f"Could not fetch {filename} from GitHub: {resp.status_code}")
+        raw = base64.b64decode(resp.json()["content"].replace("\n", ""))
+        return openpyxl.load_workbook(io.BytesIO(raw), data_only=data_only)
+    else:
+        return openpyxl.load_workbook(STAFF[person], data_only=data_only)
+
+
 def workdays(person: str) -> list:
     """Sorted list of all tracked working dates for this person."""
-    wb = openpyxl.load_workbook(STAFF[person], data_only=True)
+    wb = _fetch_workbook(person, data_only=True)
     return sorted(_date_cols(wb[TRACKER_SHEET]).keys())
 
 
 def hours_on_date(person: str, d: date) -> dict:
     """Return {task_name: hours} for a given person + date (0 if not entered)."""
-    wb = openpyxl.load_workbook(STAFF[person], data_only=True)
+    wb = _fetch_workbook(person, data_only=True)
     ws = wb[TRACKER_SHEET]
     dc = _date_cols(ws)
     c  = dc.get(d)
@@ -345,7 +375,7 @@ def hours_on_date(person: str, d: date) -> dict:
 
 def task_structure(person: str) -> list:
     """Return [(task_name, is_child_bool), ...] in spreadsheet order."""
-    wb = openpyxl.load_workbook(STAFF[person], data_only=True)
+    wb = _fetch_workbook(person, data_only=True)
     ws = wb[TRACKER_SHEET]
     return [(t, is_child(t)) for t, _ in _task_rows(ws)]
 
@@ -365,15 +395,15 @@ def save_hours(person: str, d: date, hours: dict) -> tuple:
     """
     path = STAFF[person]
 
-    # Step 1: resolve date → column
-    wb_r = openpyxl.load_workbook(path, data_only=True)
+    # Step 1: resolve date → column (data_only=True to get computed date values)
+    wb_r = _fetch_workbook(person, data_only=True)
     dc   = _date_cols(wb_r[TRACKER_SHEET])
     c    = dc.get(d)
     if c is None:
         return False, f"Date {d} not found in the tracker spreadsheet."
 
     # Step 2: open without data_only so formulas stay intact
-    wb = openpyxl.load_workbook(path)
+    wb = _fetch_workbook(person, data_only=False)
     ws = wb[TRACKER_SHEET]
     for t, r in _task_rows(ws):
         if t in hours:
@@ -383,8 +413,12 @@ def save_hours(person: str, d: date, hours: dict) -> tuple:
     if _is_cloud():
         buf = io.BytesIO()
         wb.save(buf)
-        buf.seek(0)
-        ok, msg = _github_commit(path.name, buf.read())
+        content_bytes = buf.getvalue()
+        ok, msg = _github_commit(path.name, content_bytes)
+        if ok:
+            # Also write to the local snapshot so load_all sees fresh data
+            # without waiting for a GitHub API round-trip on the next read.
+            path.write_bytes(content_bytes)
     else:
         wb.save(path)
         ok, msg = True, "Saved to Excel."
