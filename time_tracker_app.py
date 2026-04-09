@@ -18,6 +18,7 @@ import base64
 import io
 from pathlib import Path
 from datetime import datetime, date, timedelta
+import calendar
 import plotly.graph_objects as go
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1514,29 +1515,53 @@ def view_financial_kpis():
         st.markdown("##### Per-Code Income Progress vs Goal")
         goal_labels, goal_vals, actual_vals = [], [], []
         for code, goal in sorted(code_goal_rows):
-            actual = income_txns[income_txns["code"] == code]["amount"].sum() if not income_txns.empty else 0
+            actual = income_txns[income_txns["code"] == code]["amount"].sum() if not income_txns.empty else 0.0
             goal_labels.append(f"{code} — {all_codes.get(code, code)}")
             goal_vals.append(goal)
             actual_vals.append(actual)
 
         figD = go.Figure()
+        # One bar segment per income status, coloured to match the pipeline donut
+        for status in INCOME_STATUSES:
+            status_vals = []
+            for code, _ in sorted(code_goal_rows):
+                v = (income_txns[(income_txns["code"] == code) &
+                                  (income_txns["status"] == status)]["amount"].sum()
+                     if not income_txns.empty else 0.0)
+                status_vals.append(v)
+            figD.add_trace(go.Bar(
+                y=goal_labels, x=status_vals,
+                orientation="h",
+                name=status,
+                marker_color=STATUS_COLORS[status],
+                hovertemplate=f"{status}: $%{{x:,.0f}}<extra></extra>",
+            ))
+
+        # Remaining-to-goal segment (muted)
         figD.add_trace(go.Bar(
-            y=goal_labels, x=actual_vals,
+            y=goal_labels,
+            x=[max(0.0, g - a) for g, a in zip(goal_vals, actual_vals)],
             orientation="h",
-            name="Actual Income",
-            marker_color=CVU_GREEN,
-            hovertemplate="%{y}<br>Actual: $%{x:,.0f}<extra></extra>",
+            name="Remaining",
+            marker_color=CVU_SURFACE,
+            marker_line=dict(color=CVU_BORDER, width=1),
+            hovertemplate="Remaining to goal: $%{x:,.0f}<extra></extra>",
         ))
-        figD.add_trace(go.Bar(
-            y=goal_labels, x=[g - a for g, a in zip(goal_vals, actual_vals)],
-            orientation="h",
-            name="Remaining to Goal",
-            marker_color=CVU_BORDER,
-            hovertemplate="%{y}<br>Remaining: $%{x:,.0f}<extra></extra>",
-        ))
+
+        # Percentage-complete annotation at the right end of each bar
+        for label, goal, actual in zip(goal_labels, goal_vals, actual_vals):
+            pct = min(100.0, actual / goal * 100) if goal > 0 else 0.0
+            figD.add_annotation(
+                x=goal, y=label,
+                text=f"  {pct:.0f}%",
+                showarrow=False,
+                xanchor="left",
+                font=dict(color=CVU_WHITE, size=11, family="Inter, Arial, sans-serif"),
+            )
+
         figD.update_layout(**_chart_base(
             barmode="stack",
-            height=max(300, len(code_goal_rows) * 50),
+            height=max(300, len(code_goal_rows) * 54),
             yaxis=dict(automargin=True, tickfont=dict(color=CVU_WHITE, size=11),
                        gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
             xaxis=dict(title="Amount ($)", tickprefix="$", tickfont=dict(color=CVU_GRAY),
@@ -1547,43 +1572,89 @@ def view_financial_kpis():
 
     st.divider()
 
-    # ── Chart 3: Monthly cash flow ────────────────────────────────────────────
+    # ── Chart 3: Monthly cash flow (income, staff burn, other expenses, net) ──
     st.markdown("##### Monthly Cash Flow")
+
+    # Build every month from Jan through today so staff burn always appears
+    def _month_staff_cost(month_str: str) -> float:
+        """Daily burn × days worked in the month (full month if past, days-to-date if current)."""
+        y, m = int(month_str[:4]), int(month_str[5:7])
+        if date(y, m, 1) > today:
+            return 0.0
+        if y == today.year and m == today.month:
+            days = today.day
+        else:
+            days = calendar.monthrange(y, m)[1]
+        return daily_burn * days
+
+    year_months = [f"{today.year}-{m:02d}" for m in range(1, today.month + 1)]
+
     txns_m = txns.copy()
     txns_m["month"] = txns_m["date"].dt.to_period("M").astype(str)
-
     monthly_inc = (txns_m[txns_m["type"] == "Income"]
                    .groupby("month")["amount"].sum())
     monthly_exp = (txns_m[txns_m["type"] == "Expense"]
                    .groupby("month")["amount"].sum())
-    all_months  = sorted(set(list(monthly_inc.index) + list(monthly_exp.index)))
 
-    if all_months:
-        figE = go.Figure()
-        figE.add_trace(go.Bar(
-            x=all_months,
-            y=[monthly_inc.get(m, 0) for m in all_months],
-            name="Income",
-            marker_color=CVU_GREEN,
-            hovertemplate="Month: %{x}<br>Income: $%{y:,.0f}<extra></extra>",
-        ))
-        figE.add_trace(go.Bar(
-            x=all_months,
-            y=[-monthly_exp.get(m, 0) for m in all_months],
-            name="Expenses",
-            marker_color=CVU_PALETTE[5],
-            hovertemplate="Month: %{x}<br>Expenses: $%{y:,.0f}<extra></extra>",
-        ))
-        figE.update_layout(**_chart_base(
-            barmode="relative",
-            height=320,
-            xaxis=dict(tickfont=dict(color=CVU_GRAY),
-                       gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
-            yaxis=dict(title="Amount ($)", tickprefix="$", tickfont=dict(color=CVU_GRAY),
-                       gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
-            legend=dict(orientation="h", y=1.08),
-        ))
-        st.plotly_chart(figE, use_container_width=True)
+    # Merge transaction months with the full year-to-date month list
+    all_months = sorted(set(year_months)
+                        | set(monthly_inc.index)
+                        | set(monthly_exp.index))
+    # Keep only current year
+    all_months = [m for m in all_months if m.startswith(str(today.year))]
+
+    monthly_staff_costs = [_month_staff_cost(m) for m in all_months]
+    net_per_month = [
+        monthly_inc.get(m, 0) - monthly_exp.get(m, 0) - _month_staff_cost(m)
+        for m in all_months
+    ]
+
+    figE = go.Figure()
+    figE.add_trace(go.Bar(
+        x=all_months,
+        y=[monthly_inc.get(m, 0) for m in all_months],
+        name="Income",
+        marker_color=CVU_GREEN,
+        hovertemplate="<b>%{x}</b><br>Income: $%{y:,.0f}<extra></extra>",
+    ))
+    figE.add_trace(go.Bar(
+        x=all_months,
+        y=[-c for c in monthly_staff_costs],
+        name="Staff Cost",
+        marker_color=CVU_PALETTE[1],
+        hovertemplate="<b>%{x}</b><br>Staff Cost: $%{customdata:,.0f}<extra></extra>",
+        customdata=monthly_staff_costs,
+    ))
+    figE.add_trace(go.Bar(
+        x=all_months,
+        y=[-monthly_exp.get(m, 0) for m in all_months],
+        name="Other Expenses",
+        marker_color=CVU_PALETTE[5],
+        hovertemplate="<b>%{x}</b><br>Other Expenses: $%{customdata:,.0f}<extra></extra>",
+        customdata=[monthly_exp.get(m, 0) for m in all_months],
+    ))
+    figE.add_trace(go.Scatter(
+        x=all_months,
+        y=net_per_month,
+        name="Net",
+        mode="lines+markers+text",
+        line=dict(color=CVU_PALETTE[0], width=2),
+        marker=dict(size=7, color=CVU_PALETTE[0]),
+        text=[f"${v:,.0f}" for v in net_per_month],
+        textposition="top center",
+        textfont=dict(color=CVU_PALETTE[0], size=10),
+        hovertemplate="<b>%{x}</b><br>Net: $%{y:,.0f}<extra></extra>",
+    ))
+    figE.update_layout(**_chart_base(
+        barmode="relative",
+        height=360,
+        xaxis=dict(tickfont=dict(color=CVU_GRAY),
+                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+        yaxis=dict(title="Amount ($)", tickprefix="$", tickfont=dict(color=CVU_GRAY),
+                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+        legend=dict(orientation="h", y=1.08),
+    ))
+    st.plotly_chart(figE, use_container_width=True)
 
     st.divider()
 
