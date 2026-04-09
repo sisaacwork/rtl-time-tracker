@@ -145,7 +145,7 @@ GITHUB_REPO   = "rtl-time-tracker"
 GITHUB_BRANCH = "main"
 
 # Codes to treat as absences — excluded from the 900s/other and funded/unfunded charts
-ABSENCE_CODES = {"120", "121", "122", "123", "124"}
+ABSENCE_CODES = {"120", "121", "122", "123", "123", "124"}
 
 # Sub-codes that count as externally funded work
 FUNDED_CODES = {
@@ -154,6 +154,44 @@ FUNDED_CODES = {
     "905a", "905b",
     "906a", "906b",
     "910", "915", "916", "917",
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FINANCIAL TRACKING CONSTANTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+FINANCES_FILE = "finances.xlsx"
+
+INCOME_STATUSES = ["Paid", "Invoiced", "Contracted", "Verbal", "Pipeline"]
+
+# Base accounting codes — all staff costs are bundled under 903.
+# Users can add custom codes inside the app.
+ACCOUNTING_CODES = {
+    "901a": "Venice Research Office",
+    "901b": "Canada Research Office",
+    "902":  "Seed Funding Research Competition & Program",
+    "903":  "RTL Admin / RTL Meetings",
+    "903a": "Research Proposals",
+    "903b": "Short-term Projects",
+    "903c": "BoD Signboards",
+    "904a": "City Advocacy Research Outputs",
+    "904b": "City Advocacy non-research related activity / Event",
+    "905a": "Sustainability Program Research Outputs",
+    "905b": "Sustainability Program non-research related activity / Event",
+    "906a": "T+U Innovation Research Outputs",
+    "906b": "T+U Innovation Program non-research related activity / Event",
+    "910":  "Climateworks Code Research",
+    "915":  "SLB Steel-Timber Expansion Project",
+    "916":  "Commissioned Research Delivery",
+    "917":  "Commissioned Research Proposals",
+}
+
+STATUS_COLORS = {
+    "Paid":       "#66CC00",   # CVU_GREEN
+    "Invoiced":   "#516BFF",   # CVU_PALETTE[0]
+    "Contracted": "#54D9E7",   # CVU_PALETTE[2]
+    "Verbal":     "#FF9F18",   # CVU_PALETTE[1]
+    "Pipeline":   "#4F4F4F",   # CVU_BORDER (muted)
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -210,6 +248,142 @@ def _github_commit(filename: str, content_bytes: bytes) -> tuple:
     if resp.status_code in (200, 201):
         return True, "Saved to GitHub."
     return False, f"GitHub error {resp.status_code}: {resp.text[:200]}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FINANCES DATA — load / save
+# ══════════════════════════════════════════════════════════════════════════════
+
+TXNS_COLS = ["id", "date", "type", "amount", "code", "code_name",
+             "description", "status", "notes"]
+
+
+def _empty_transactions() -> pd.DataFrame:
+    return pd.DataFrame(columns=TXNS_COLS)
+
+
+def _fetch_finances_bytes():
+    """
+    Return raw bytes of finances.xlsx from GitHub (cloud) or disk (local).
+    Returns None if the file doesn't exist yet.
+    """
+    if _is_cloud():
+        url = (
+            f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}"
+            f"/contents/{FINANCES_FILE}?ref={GITHUB_BRANCH}"
+        )
+        resp = requests.get(url, headers={
+            "Authorization": f"token {_github_token()}",
+            "Accept":        "application/vnd.github.v3+json",
+        })
+        if resp.status_code == 404:
+            return None
+        if resp.status_code != 200:
+            raise RuntimeError(f"GitHub error fetching finances: {resp.status_code}")
+        return base64.b64decode(resp.json()["content"].replace("\n", ""))
+    else:
+        local = DATA_DIR / FINANCES_FILE
+        if not local.exists():
+            return None
+        return local.read_bytes()
+
+
+@st.cache_data(ttl=30, show_spinner="Loading financial data...")
+def load_finances():
+    """
+    Returns (transactions_df, settings_dict, all_codes_dict).
+    Creates empty structures if the file doesn't exist yet.
+    """
+    raw = _fetch_finances_bytes()
+
+    if raw is None:
+        return _empty_transactions(), {}, dict(ACCOUNTING_CODES)
+
+    wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
+
+    # --- transactions sheet ---
+    records = []
+    if "transactions" in wb.sheetnames:
+        ws = wb["transactions"]
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row[0] is None:
+                continue
+            records.append(dict(zip(TXNS_COLS, row)))
+
+    txns = pd.DataFrame(records, columns=TXNS_COLS) if records else _empty_transactions()
+    if not txns.empty:
+        txns["date"]   = pd.to_datetime(txns["date"])
+        txns["amount"] = pd.to_numeric(txns["amount"], errors="coerce").fillna(0.0)
+
+    # --- settings sheet ---
+    settings     = {}
+    custom_codes = {}
+    if "settings" in wb.sheetnames:
+        ws = wb["settings"]
+        for row in ws.iter_rows(min_row=1, values_only=True):
+            if row[0] is None:
+                continue
+            key = str(row[0])
+            val = row[1]
+            if key.startswith("custom_code_"):
+                code = key[len("custom_code_"):]
+                custom_codes[code] = str(val) if val else code
+            else:
+                try:
+                    settings[key] = float(val) if val is not None else 0.0
+                except (TypeError, ValueError):
+                    settings[key] = val
+
+    all_codes = dict(ACCOUNTING_CODES)
+    all_codes.update(custom_codes)
+
+    return txns, settings, all_codes
+
+
+def save_finances(txns: pd.DataFrame, settings: dict, custom_codes: dict) -> tuple:
+    """
+    Persist transactions + settings to finances.xlsx and commit to GitHub.
+    Returns (success: bool, message: str).
+    """
+    wb    = openpyxl.Workbook()
+    ws_t  = wb.active
+    ws_t.title = "transactions"
+    ws_t.append(TXNS_COLS)
+
+    for _, row in txns.iterrows():
+        ws_t.append([
+            int(row.get("id", 0)),
+            row["date"].date() if pd.notna(row.get("date")) else None,
+            str(row.get("type", "")),
+            float(row.get("amount", 0)),
+            str(row.get("code", "")),
+            str(row.get("code_name", "")),
+            str(row.get("description", "")),
+            str(row.get("status", "")),
+            str(row.get("notes", "")),
+        ])
+
+    ws_s = wb.create_sheet("settings")
+    for key, val in settings.items():
+        ws_s.append([key, val])
+    for code, name in custom_codes.items():
+        ws_s.append([f"custom_code_{code}", name])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    content_bytes = buf.getvalue()
+
+    local_path = DATA_DIR / FINANCES_FILE
+    if _is_cloud():
+        ok, msg = _github_commit(FINANCES_FILE, content_bytes)
+        if ok:
+            local_path.write_bytes(content_bytes)
+    else:
+        local_path.write_bytes(content_bytes)
+        ok, msg = True, "Saved."
+
+    load_finances.clear()
+    return ok, msg
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1072,6 +1246,367 @@ def view_team(df: pd.DataFrame):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# VIEW: FINANCIAL KPIs (admin only)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def view_financial_kpis():
+    txns, settings, all_codes = load_finances()
+
+    # ── Settings & Goals ──────────────────────────────────────────────────────
+    with st.expander("Settings & Goals", expanded=txns.empty):
+        s1, s2 = st.columns(2)
+        ann_staff = s1.number_input(
+            "Annual Total Staff Cost ($)",
+            min_value=0.0, step=1000.0,
+            value=float(settings.get("annual_staff_cost", 0.0)),
+            format="%.2f",
+            key="fin_staff_cost",
+        )
+        ann_goal = s2.number_input(
+            "Annual Income Goal ($)",
+            min_value=0.0, step=1000.0,
+            value=float(settings.get("annual_income_goal", 0.0)),
+            format="%.2f",
+            key="fin_income_goal",
+        )
+
+        st.markdown(
+            "<p style='color:#9E9E9E;font-size:0.85rem;margin-top:12px'>"
+            "Per-Code Income Goals (optional — leave at 0 to skip)</p>",
+            unsafe_allow_html=True,
+        )
+        code_goals  = {}
+        code_items  = list(all_codes.items())
+        goal_cols   = st.columns(3)
+        for i, (code, name) in enumerate(code_items):
+            with goal_cols[i % 3]:
+                goal_key = f"goal_{code}"
+                code_goals[code] = st.number_input(
+                    f"{code} — {name[:28]}",
+                    min_value=0.0, step=500.0,
+                    value=float(settings.get(goal_key, 0.0)),
+                    format="%.2f",
+                    key=f"fin_goal_{code}",
+                    label_visibility="visible",
+                )
+
+        if st.button("Save Settings", type="primary"):
+            new_settings = {
+                "annual_staff_cost":  ann_staff,
+                "annual_income_goal": ann_goal,
+            }
+            for code, goal in code_goals.items():
+                if goal > 0:
+                    new_settings[f"goal_{code}"] = goal
+            custom_codes = {k: v for k, v in all_codes.items() if k not in ACCOUNTING_CODES}
+            ok, msg = save_finances(txns, new_settings, custom_codes)
+            if ok:
+                st.toast("Settings saved.")
+                st.rerun()
+            else:
+                st.error(msg)
+
+    # ── Burn-rate KPI metrics ─────────────────────────────────────────────────
+    today         = date.today()
+    days_lapsed   = (today - date(today.year, 1, 1)).days + 1
+    ann_staff_val = float(settings.get("annual_staff_cost", 0.0))
+    daily_burn    = ann_staff_val / 365 if ann_staff_val > 0 else 0.0
+    ytd_staff     = daily_burn * days_lapsed
+
+    income_txns  = txns[txns["type"] == "Income"]  if not txns.empty else pd.DataFrame(columns=TXNS_COLS)
+    expense_txns = txns[txns["type"] == "Expense"] if not txns.empty else pd.DataFrame(columns=TXNS_COLS)
+
+    paid_income  = income_txns[income_txns["status"] == "Paid"]["amount"].sum()         if not income_txns.empty else 0.0
+    soft_income  = income_txns[~income_txns["status"].isin(["Paid"])]["amount"].sum()   if not income_txns.empty else 0.0
+    total_exp    = expense_txns["amount"].sum()                                          if not expense_txns.empty else 0.0
+    net          = paid_income - total_exp - ytd_staff
+
+    st.markdown("##### Financial Overview")
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    k1.metric("Daily Burn Rate",      f"${daily_burn:,.0f}/day" if daily_burn else "No staff cost set")
+    k2.metric("YTD Staff Cost",       f"${ytd_staff:,.0f}")
+    k3.metric("Income — Paid",        f"${paid_income:,.0f}")
+    k4.metric("Income — Not Yet Paid",f"${soft_income:,.0f}")
+    k5.metric("Other Expenses YTD",   f"${total_exp:,.0f}")
+    k6.metric("Net (Paid - Costs)",   f"${net:,.0f}")
+    st.divider()
+
+    # ── Add Transaction ───────────────────────────────────────────────────────
+    with st.expander("Add Transaction", expanded=False):
+        custom_codes = {k: v for k, v in all_codes.items() if k not in ACCOUNTING_CODES}
+
+        ac1, ac2, ac3 = st.columns([1, 1, 1])
+        txn_date = ac1.date_input("Date", value=today, key="txn_date")
+        txn_type = ac2.selectbox("Type", ["Income", "Expense"], key="txn_type")
+        txn_amt  = ac3.number_input("Amount ($)", min_value=0.0, step=100.0,
+                                    format="%.2f", key="txn_amt")
+
+        code_options     = [f"{k} — {v}" for k, v in all_codes.items()] + ["+ Add new code"]
+        bc1, bc2         = st.columns(2)
+        sel_code_str     = bc1.selectbox("Accounting Code", code_options, key="txn_code_sel")
+        txn_desc         = bc2.text_input("Description", key="txn_desc")
+
+        if sel_code_str == "+ Add new code":
+            nc1, nc2      = st.columns(2)
+            new_code_id   = nc1.text_input("Code (e.g. 918)", key="new_code_id")
+            new_code_name = nc2.text_input("Code name", key="new_code_name")
+            txn_code      = new_code_id.strip()
+            txn_code_name = new_code_name.strip()
+            save_new_code = st.checkbox("Save this code for future use", value=True, key="save_new_code")
+        else:
+            parts         = sel_code_str.split(" — ", 1)
+            txn_code      = parts[0].strip()
+            txn_code_name = parts[1].strip() if len(parts) > 1 else txn_code
+            save_new_code = False
+
+        txn_status = ""
+        if txn_type == "Income":
+            txn_status = st.selectbox("Status", INCOME_STATUSES, key="txn_status")
+
+        txn_notes = st.text_input("Notes (optional)", key="txn_notes")
+
+        if st.button("Add Transaction", type="primary", use_container_width=True):
+            if txn_amt <= 0:
+                st.error("Please enter an amount greater than 0.")
+            elif not txn_code:
+                st.error("Please select or enter an accounting code.")
+            else:
+                new_id  = int(txns["id"].max() + 1) if not txns.empty and txns["id"].notna().any() else 1
+                new_row = pd.DataFrame([{
+                    "id":          new_id,
+                    "date":        pd.Timestamp(txn_date),
+                    "type":        txn_type,
+                    "amount":      txn_amt,
+                    "code":        txn_code,
+                    "code_name":   txn_code_name,
+                    "description": txn_desc,
+                    "status":      txn_status,
+                    "notes":       txn_notes,
+                }])
+                updated_txns   = pd.concat([txns, new_row], ignore_index=True)
+                updated_custom = dict(custom_codes)
+                if save_new_code and txn_code and txn_code not in ACCOUNTING_CODES:
+                    updated_custom[txn_code] = txn_code_name
+                ok, msg = save_finances(updated_txns, dict(settings), updated_custom)
+                if ok:
+                    st.toast("Transaction added.")
+                    st.rerun()
+                else:
+                    st.error(msg)
+
+    if txns.empty:
+        st.info("No transactions yet — use the form above to add income or expenses.")
+        return
+
+    st.divider()
+
+    # ── Chart row 1: Income by status donut  +  Progress to annual goal ───────
+    st.markdown("##### Income Pipeline")
+    ch1, ch2 = st.columns(2)
+
+    with ch1:
+        if not income_txns.empty:
+            status_grp = income_txns.groupby("status")["amount"].sum().reset_index()
+            figA = go.Figure(go.Pie(
+                labels=status_grp["status"],
+                values=status_grp["amount"],
+                hole=0.58,
+                marker_colors=[STATUS_COLORS.get(s, CVU_GRAY) for s in status_grp["status"]],
+                hovertemplate="%{label}<br>$%{value:,.0f} (%{percent})<extra></extra>",
+                textinfo="percent",
+                textfont=dict(color=CVU_WHITE, size=12, family="Inter, Arial, sans-serif"),
+            ))
+            figA.update_layout(**_chart_base(
+                height=300,
+                title=dict(text="Income by Status",
+                           font=dict(color=CVU_WHITE, size=13), x=0.5, xanchor="center"),
+                showlegend=True,
+                legend=dict(orientation="h", y=-0.12, x=0.5, xanchor="center"),
+                margin=dict(t=50, b=55, l=20, r=20),
+            ))
+            st.plotly_chart(figA, use_container_width=True)
+        else:
+            st.info("No income transactions yet.")
+
+    with ch2:
+        annual_goal_val = float(settings.get("annual_income_goal", 0.0))
+        if annual_goal_val > 0 and not income_txns.empty:
+            seg_data = {s: income_txns[income_txns["status"] == s]["amount"].sum()
+                        for s in INCOME_STATUSES}
+            figB = go.Figure()
+            for s in INCOME_STATUSES:
+                figB.add_trace(go.Bar(
+                    x=[seg_data.get(s, 0)],
+                    y=["Income"],
+                    orientation="h",
+                    name=s,
+                    marker_color=STATUS_COLORS.get(s, CVU_GRAY),
+                    hovertemplate=f"{s}: $%{{x:,.0f}}<extra></extra>",
+                ))
+            figB.add_vline(
+                x=annual_goal_val,
+                line_dash="dot",
+                line_color=CVU_WHITE,
+                annotation_text=f"Goal  ${annual_goal_val:,.0f}",
+                annotation_font_color=CVU_WHITE,
+                annotation_position="top right",
+            )
+            figB.update_layout(**_chart_base(
+                barmode="stack",
+                height=220,
+                title=dict(text="Progress to Annual Income Goal",
+                           font=dict(color=CVU_WHITE, size=13), x=0.5, xanchor="center"),
+                showlegend=True,
+                legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"),
+                margin=dict(t=50, b=90, l=20, r=20),
+                xaxis=dict(tickprefix="$", tickfont=dict(color=CVU_GRAY),
+                           gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+                yaxis=dict(showticklabels=False, gridcolor=CVU_BORDER),
+            ))
+            st.plotly_chart(figB, use_container_width=True)
+        elif annual_goal_val == 0:
+            st.info("Set an annual income goal in Settings to see progress here.")
+
+    st.divider()
+
+    # ── Chart 2: Income vs Expenses by code ───────────────────────────────────
+    st.markdown("##### Income vs Expenses by Code")
+    inc_by_code = (income_txns.groupby("code")["amount"].sum().reset_index()
+                   .rename(columns={"amount": "income"})
+                   if not income_txns.empty else pd.DataFrame(columns=["code", "income"]))
+    exp_by_code = (expense_txns.groupby("code")["amount"].sum().reset_index()
+                   .rename(columns={"amount": "expenses"})
+                   if not expense_txns.empty else pd.DataFrame(columns=["code", "expenses"]))
+
+    by_code = pd.merge(inc_by_code, exp_by_code, on="code", how="outer").fillna(0)
+    if not by_code.empty:
+        by_code["label"] = by_code["code"].map(all_codes).fillna(by_code["code"])
+        by_code["label"] = by_code.apply(lambda r: f"{r['code']} — {r['label']}", axis=1)
+        by_code = by_code.sort_values("income", ascending=False)
+
+        figC = go.Figure()
+        figC.add_trace(go.Bar(
+            x=by_code["label"], y=by_code["income"],
+            name="Income", marker_color=CVU_GREEN,
+            hovertemplate="%{x}<br>Income: $%{y:,.0f}<extra></extra>",
+        ))
+        figC.add_trace(go.Bar(
+            x=by_code["label"], y=by_code["expenses"],
+            name="Expenses", marker_color=CVU_PALETTE[5],
+            hovertemplate="%{x}<br>Expenses: $%{y:,.0f}<extra></extra>",
+        ))
+        figC.update_layout(**_chart_base(
+            barmode="group",
+            height=360,
+            xaxis=dict(tickangle=-35, tickfont=dict(color=CVU_GRAY, size=10),
+                       gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+            yaxis=dict(title="Amount ($)", tickprefix="$", tickfont=dict(color=CVU_GRAY),
+                       gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+            legend=dict(orientation="h", y=1.08),
+        ))
+        st.plotly_chart(figC, use_container_width=True)
+
+    # Per-code goal progress (only show codes that have a goal set)
+    code_goal_rows = [(c, float(settings[f"goal_{c}"])) for c in all_codes
+                      if f"goal_{c}" in settings and float(settings[f"goal_{c}"]) > 0]
+    if code_goal_rows:
+        st.markdown("##### Per-Code Income Progress vs Goal")
+        goal_labels, goal_vals, actual_vals = [], [], []
+        for code, goal in sorted(code_goal_rows):
+            actual = income_txns[income_txns["code"] == code]["amount"].sum() if not income_txns.empty else 0
+            goal_labels.append(f"{code} — {all_codes.get(code, code)}")
+            goal_vals.append(goal)
+            actual_vals.append(actual)
+
+        figD = go.Figure()
+        figD.add_trace(go.Bar(
+            y=goal_labels, x=actual_vals,
+            orientation="h",
+            name="Actual Income",
+            marker_color=CVU_GREEN,
+            hovertemplate="%{y}<br>Actual: $%{x:,.0f}<extra></extra>",
+        ))
+        figD.add_trace(go.Bar(
+            y=goal_labels, x=[g - a for g, a in zip(goal_vals, actual_vals)],
+            orientation="h",
+            name="Remaining to Goal",
+            marker_color=CVU_BORDER,
+            hovertemplate="%{y}<br>Remaining: $%{x:,.0f}<extra></extra>",
+        ))
+        figD.update_layout(**_chart_base(
+            barmode="stack",
+            height=max(300, len(code_goal_rows) * 50),
+            yaxis=dict(automargin=True, tickfont=dict(color=CVU_WHITE, size=11),
+                       gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+            xaxis=dict(title="Amount ($)", tickprefix="$", tickfont=dict(color=CVU_GRAY),
+                       gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+            legend=dict(orientation="h", y=1.06),
+        ))
+        st.plotly_chart(figD, use_container_width=True)
+
+    st.divider()
+
+    # ── Chart 3: Monthly cash flow ────────────────────────────────────────────
+    st.markdown("##### Monthly Cash Flow")
+    txns_m = txns.copy()
+    txns_m["month"] = txns_m["date"].dt.to_period("M").astype(str)
+
+    monthly_inc = (txns_m[txns_m["type"] == "Income"]
+                   .groupby("month")["amount"].sum())
+    monthly_exp = (txns_m[txns_m["type"] == "Expense"]
+                   .groupby("month")["amount"].sum())
+    all_months  = sorted(set(list(monthly_inc.index) + list(monthly_exp.index)))
+
+    if all_months:
+        figE = go.Figure()
+        figE.add_trace(go.Bar(
+            x=all_months,
+            y=[monthly_inc.get(m, 0) for m in all_months],
+            name="Income",
+            marker_color=CVU_GREEN,
+            hovertemplate="Month: %{x}<br>Income: $%{y:,.0f}<extra></extra>",
+        ))
+        figE.add_trace(go.Bar(
+            x=all_months,
+            y=[-monthly_exp.get(m, 0) for m in all_months],
+            name="Expenses",
+            marker_color=CVU_PALETTE[5],
+            hovertemplate="Month: %{x}<br>Expenses: $%{y:,.0f}<extra></extra>",
+        ))
+        figE.update_layout(**_chart_base(
+            barmode="relative",
+            height=320,
+            xaxis=dict(tickfont=dict(color=CVU_GRAY),
+                       gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+            yaxis=dict(title="Amount ($)", tickprefix="$", tickfont=dict(color=CVU_GRAY),
+                       gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+            legend=dict(orientation="h", y=1.08),
+        ))
+        st.plotly_chart(figE, use_container_width=True)
+
+    st.divider()
+
+    # ── Transaction Table ─────────────────────────────────────────────────────
+    st.markdown("##### All Transactions")
+    tf1, tf2, tf3 = st.columns(3)
+    f_type   = tf1.selectbox("Filter: Type",   ["All", "Income", "Expense"], key="tbl_type")
+    f_status = tf2.selectbox("Filter: Status", ["All"] + INCOME_STATUSES,   key="tbl_status")
+    f_code   = tf3.selectbox("Filter: Code",   ["All"] + sorted(txns["code"].unique().tolist()), key="tbl_code")
+
+    tbl = txns.copy()
+    if f_type   != "All": tbl = tbl[tbl["type"]   == f_type]
+    if f_status != "All": tbl = tbl[tbl["status"] == f_status]
+    if f_code   != "All": tbl = tbl[tbl["code"]   == f_code]
+
+    tbl = tbl.sort_values("date", ascending=False).copy()
+    tbl["date"]   = tbl["date"].dt.date
+    tbl["amount"] = tbl["amount"].apply(lambda x: f"${x:,.2f}")
+    tbl = tbl.drop(columns=["id"])
+    tbl.columns   = ["Date", "Type", "Amount", "Code", "Code Name", "Description", "Status", "Notes"]
+    st.dataframe(tbl, hide_index=True, use_container_width=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # AUTH — simple password gate
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1195,24 +1730,33 @@ def main():
     role = st.session_state.get("role", "staff")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # ADMIN (C-LEVEL) ROUTE — dashboard only, no staff picker
+    # ADMIN (C-LEVEL) ROUTE — Time KPIs or Financial KPIs
     # ══════════════════════════════════════════════════════════════════════════
     if role == "admin":
         with st.sidebar:
-            st.title("RTL Time Tracker")
+            st.title("RTL Dashboard")
             st.divider()
-            st.caption("Executive Review")
+            kpi_mode = st.radio(
+                "KPI Module",
+                options=["Time KPIs", "Financial KPIs"],
+                key="admin_kpi_mode",
+            )
             st.divider()
             if st.button("Refresh Data", use_container_width=True):
                 load_all.clear()
+                load_finances.clear()
                 st.rerun()
             st.divider()
             if st.button("Sign Out", use_container_width=True):
                 st.session_state.clear()
                 st.rerun()
 
-        st.title("Team Overview")
-        view_team(load_all())
+        if kpi_mode == "Time KPIs":
+            st.title("Team Overview — Time KPIs")
+            view_team(load_all())
+        else:
+            st.title("Financial KPIs")
+            view_financial_kpis()
         return
 
     # ══════════════════════════════════════════════════════════════════════════
