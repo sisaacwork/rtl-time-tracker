@@ -15,6 +15,7 @@ Schedule hourly on weekdays via cron (run `crontab -e` and add):
 """
 
 import os
+import time
 import base64
 import requests
 from pathlib import Path
@@ -81,6 +82,21 @@ def github_download(filename: str, dest: Path) -> tuple:
     return True, f"Downloaded to {dest}"
 
 
+def _read_bytes_with_retry(path: Path, retries: int = 4, delay: float = 3.0) -> bytes:
+    """
+    Read a file's bytes, retrying if OneDrive has a temporary lock on it.
+    Raises OSError if all retries are exhausted.
+    """
+    for attempt in range(retries):
+        try:
+            return path.read_bytes()
+        except OSError as e:
+            if attempt < retries - 1:
+                time.sleep(delay)
+            else:
+                raise
+
+
 def github_upload(filename: str, source: Path) -> tuple:
     """Upload a local file to GitHub, replacing the existing version."""
     url = (
@@ -88,24 +104,35 @@ def github_upload(filename: str, source: Path) -> tuple:
         f"/contents/{filename}"
     )
 
-    # Need the current SHA to update an existing file
-    r   = requests.get(url, headers=_headers())
-    sha = r.json().get("sha") if r.status_code == 200 else None
+    def _fetch_sha():
+        # Pin to the target branch so SHA always matches the PUT
+        r = requests.get(f"{url}?ref={GITHUB_BRANCH}", headers=_headers())
+        return r.json().get("sha") if r.status_code == 200 else None
 
-    payload = {
-        "message": (
-            f"Sync from OneDrive: {filename} "
-            f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC]"
-        ),
-        "content": base64.b64encode(source.read_bytes()).decode(),
-        "branch":  GITHUB_BRANCH,
-    }
-    if sha:
-        payload["sha"] = sha
+    # Read file with retry in case OneDrive has a temporary lock
+    content_bytes = _read_bytes_with_retry(source)
+    encoded = base64.b64encode(content_bytes).decode()
 
-    resp = requests.put(url, headers=_headers(), json=payload)
+    def _do_put(sha):
+        payload = {
+            "message": (
+                f"Sync from OneDrive: {filename} "
+                f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC]"
+            ),
+            "content": encoded,
+            "branch":  GITHUB_BRANCH,
+        }
+        if sha:
+            payload["sha"] = sha
+        return requests.put(url, headers=_headers(), json=payload)
+
+    resp = _do_put(_fetch_sha())
+    # Retry once on SHA conflict
+    if resp.status_code == 409:
+        resp = _do_put(_fetch_sha())
+
     if resp.status_code in (200, 201):
-        return True, f"Uploaded to GitHub"
+        return True, "Uploaded to GitHub"
     return False, f"GitHub error {resp.status_code}: {resp.text[:200]}"
 
 
