@@ -82,19 +82,20 @@ def github_download(filename: str, dest: Path) -> tuple:
     return True, f"Downloaded to {dest}"
 
 
-def _read_bytes_with_retry(path: Path, retries: int = 4, delay: float = 3.0) -> bytes:
+def _read_bytes_with_retry(path: Path, retries: int = 10, delay: float = 6.0) -> bytes:
     """
     Read a file's bytes, retrying if OneDrive has a temporary lock on it.
-    Raises OSError if all retries are exhausted.
+    Waits up to ~60 s total before giving up.
     """
+    last_err = None
     for attempt in range(retries):
         try:
             return path.read_bytes()
         except OSError as e:
-            if attempt < retries - 1:
-                time.sleep(delay)
-            else:
-                raise
+            last_err = e
+            print(f"    [retry {attempt + 1}/{retries}] lock on {path.name}, waiting {delay:.0f}s…")
+            time.sleep(delay)
+    raise OSError(f"Could not read {path.name} after {retries} attempts: {last_err}")
 
 
 def github_upload(filename: str, source: Path) -> tuple:
@@ -202,7 +203,10 @@ def main():
         raise SystemExit(1)
 
     for filename in TRACKER_FILES:
-        status = sync_file(filename, folder)
+        try:
+            status = sync_file(filename, folder)
+        except Exception as e:
+            status = f"ERR  {e}"
         print(f"  {filename:<40} {status}")
 
     print("Done.")
