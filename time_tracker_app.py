@@ -60,6 +60,91 @@ html, body, [class*="css"] {
     font-family: 'Inter', Arial, sans-serif;
 }
 
+/* ══════════════════════════════════════════════════════
+   FORCE DARK THEME — overrides system light mode
+   ══════════════════════════════════════════════════════ */
+
+/* App backgrounds */
+.stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="block-container"],
+section.main {
+    background-color: #171717 !important;
+    color: #FCFCFC !important;
+}
+
+/* All text */
+p, span, label, div, li, a,
+h1, h2, h3, h4, h5, h6,
+.stMarkdown, [data-testid="stMarkdownContainer"] {
+    color: #FCFCFC !important;
+}
+
+/* Text inputs & number inputs */
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stDateInput"] input,
+[data-testid="stTextArea"] textarea {
+    background-color: #282828 !important;
+    color: #FCFCFC !important;
+    border-color: #4F4F4F !important;
+}
+
+/* Selectboxes */
+[data-baseweb="select"] > div,
+[data-baseweb="select"] * {
+    background-color: #282828 !important;
+    color: #FCFCFC !important;
+    border-color: #4F4F4F !important;
+}
+
+/* Dropdown menus */
+[data-baseweb="popover"],
+[data-baseweb="menu"],
+[role="listbox"],
+[role="option"] {
+    background-color: #282828 !important;
+    color: #FCFCFC !important;
+}
+
+/* Expanders */
+[data-testid="stExpander"],
+[data-testid="stExpander"] summary {
+    background-color: #282828 !important;
+    border-color: #4F4F4F !important;
+    color: #FCFCFC !important;
+}
+
+/* Radio & checkbox labels */
+[data-testid="stRadio"] label,
+[data-testid="stCheckbox"] label {
+    color: #FCFCFC !important;
+}
+
+/* Data editor / dataframe */
+[data-testid="stDataFrameResizable"],
+[data-testid="data-grid-canvas"],
+.dvn-scroller {
+    background-color: #282828 !important;
+}
+
+/* Caption / helper text */
+[data-testid="stCaptionContainer"],
+.stCaption {
+    color: #9E9E9E !important;
+}
+
+/* Dividers */
+hr {
+    border-color: #4F4F4F !important;
+}
+
+/* Hide the theme switcher from the hamburger menu */
+[data-testid="main-menu-list"] li:has(span:contains("Settings")) {
+    display: none !important;
+}
+
 /* ── Sidebar ── */
 section[data-testid="stSidebar"] {
     background-color: #171717 !important;
