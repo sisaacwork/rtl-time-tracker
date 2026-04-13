@@ -1058,7 +1058,10 @@ def view_team(df: pd.DataFrame):
     fig1.update_layout(**_chart_base(
         height=max(300, len(cat_df) * 55),
         yaxis=dict(automargin=True, tickfont=dict(color=CVU_WHITE, size=11),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER,
+                   tickmode="array",
+                   tickvals=cat_df["category"].tolist(),
+                   ticktext=cat_df["category"].tolist()),
         xaxis=dict(title="Total Hours", tickfont=dict(color=CVU_GRAY),
                    gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
     ))
@@ -1236,7 +1239,10 @@ def view_team(df: pd.DataFrame):
     fig6.update_layout(**_chart_base(
         height=max(300, len(cost_df) * 55),
         yaxis=dict(automargin=True, tickfont=dict(color=CVU_WHITE, size=11),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER,
+                   tickmode="array",
+                   tickvals=cost_df["category"].tolist(),
+                   ticktext=cost_df["category"].tolist()),
         xaxis=dict(title=f"Estimated Cost (USD @ ${BLENDED_RATE:.0f}/hr)",
                    tickprefix="$", tickfont=dict(color=CVU_GRAY),
                    gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
