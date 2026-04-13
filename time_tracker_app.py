@@ -1089,6 +1089,18 @@ def view_team(df: pd.DataFrame):
             marker_color=staff_colors[person],
             hovertemplate=f"{person}<br>%{{x}}<br>Hours: %{{y:.1f}}<extra></extra>",
         ))
+    # Full-team capacity line: 4 staff × 8 hrs — bar above = overtime
+    full_day_hrs = 8.0 * len(STAFF)
+    fig2.add_hline(
+        y=full_day_hrs,
+        line_dash="dot",
+        line_color=CVU_WHITE,
+        opacity=0.5,
+        annotation_text=f"{full_day_hrs:.0f} hrs (full day)",
+        annotation_position="top right",
+        annotation_font_color=CVU_WHITE,
+        annotation_font_size=11,
+    )
     fig2.update_layout(**_chart_base(
         barmode="stack",
         height=360,
