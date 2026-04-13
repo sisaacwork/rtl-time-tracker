@@ -57,25 +57,28 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 /* ══════════════════════════════════════════════════════
-   FORCE DARK THEME — override Streamlit CSS variables
+   FORCE DARK THEME — always, regardless of system mode
    ══════════════════════════════════════════════════════ */
 
-/* Override the CSS custom properties Streamlit uses for theming */
-:root {
-    --background-color: #171717 !important;
-    --secondary-background-color: #282828 !important;
-    --text-color: #FCFCFC !important;
-    --primary-color: #B4E817 !important;
-    --font: 'Inter', Arial, sans-serif !important;
+/* CSS variables — applies in all colour schemes */
+:root,
+:root[data-theme="light"],
+:root[data-theme="dark"] {
+    --background-color: #171717;
+    --secondary-background-color: #282828;
+    --text-color: #FCFCFC;
+    --primary-color: #B4E817;
+    color-scheme: dark;
 }
 
+/* Base */
 html, body {
     font-family: 'Inter', Arial, sans-serif !important;
     background-color: #171717 !important;
     color: #FCFCFC !important;
 }
 
-/* Every container that can show a white background */
+/* App containers */
 .stApp,
 .stApp > header,
 [data-testid="stAppViewContainer"],
@@ -83,12 +86,79 @@ html, body {
 [data-testid="stMain"],
 [data-testid="stMain"] > div,
 [data-testid="block-container"],
-section.main,
-.main,
-.main > div {
+section.main, .main, .main > div {
     background-color: #171717 !important;
     background: #171717 !important;
     color: #FCFCFC !important;
+}
+
+/* ── Override specifically inside light-mode media query ──
+   Streamlit applies its light theme here, so we counter it
+   at the same specificity level */
+@media (prefers-color-scheme: light) {
+    :root {
+        --background-color: #171717;
+        --secondary-background-color: #282828;
+        --text-color: #FCFCFC;
+        --primary-color: #B4E817;
+        color-scheme: dark;
+    }
+    html, body {
+        background-color: #171717 !important;
+        color: #FCFCFC !important;
+    }
+    .stApp,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stAppViewContainer"] > section,
+    [data-testid="stMain"],
+    [data-testid="stMain"] > div,
+    [data-testid="block-container"],
+    section.main, .main, .main > div {
+        background-color: #171717 !important;
+        background: #171717 !important;
+        color: #FCFCFC !important;
+    }
+    p, span, label, div, li, a,
+    h1, h2, h3, h4, h5, h6 {
+        color: #FCFCFC !important;
+    }
+    [data-testid="stTextInput"] input,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stDateInput"] input,
+    [data-testid="stTextArea"] textarea {
+        background-color: #282828 !important;
+        color: #FCFCFC !important;
+        border-color: #4F4F4F !important;
+    }
+    [data-baseweb="select"] > div,
+    [data-baseweb="select"] * {
+        background-color: #282828 !important;
+        color: #FCFCFC !important;
+    }
+    [data-baseweb="popover"], [data-baseweb="menu"],
+    [role="listbox"], [role="option"] {
+        background-color: #282828 !important;
+        color: #FCFCFC !important;
+    }
+    [data-testid="stExpander"],
+    [data-testid="stExpander"] summary,
+    [data-testid="stExpander"] > div {
+        background-color: #282828 !important;
+        color: #FCFCFC !important;
+        border-color: #4F4F4F !important;
+    }
+    .stButton > button:not([kind="primary"]) {
+        background-color: #282828 !important;
+        color: #FCFCFC !important;
+        border-color: #4F4F4F !important;
+    }
+    div[data-testid="stMetric"] {
+        background: #282828 !important;
+    }
+    div[data-testid="stMetric"] * {
+        color: #FCFCFC !important;
+    }
+    hr { border-color: #4F4F4F !important; }
 }
 
 /* All text */
@@ -228,43 +298,6 @@ div[data-testid="stTabs"] button {
 }
 </style>
 
-<script>
-// Force Streamlit to use dark theme by writing to its localStorage key.
-// Runs once and also watches for Streamlit re-hydration that might reset it.
-(function () {
-    function lock() {
-        try {
-            Object.defineProperty(window, '__streamlit_theme', {
-                get: function() { return 'dark'; },
-                configurable: true
-            });
-            localStorage.setItem('theme', 'Dark');
-        } catch(e) {}
-
-        // Also stamp the CSS variable directly on the root element
-        var root = document.documentElement;
-        root.style.setProperty('--background-color', '#171717');
-        root.style.setProperty('--secondary-background-color', '#282828');
-        root.style.setProperty('--text-color', '#FCFCFC');
-        root.style.setProperty('--primary-color', '#B4E817');
-
-        // Force app background
-        var app = document.querySelector('.stApp');
-        if (app) { app.style.background = '#171717'; }
-        var main = document.querySelector('[data-testid="stMain"]');
-        if (main) { main.style.background = '#171717'; }
-    }
-
-    lock();
-    // Re-apply after Streamlit finishes its own rendering
-    setTimeout(lock, 500);
-    setTimeout(lock, 1500);
-
-    // Watch for Streamlit re-injecting theme styles
-    var obs = new MutationObserver(lock);
-    obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
-})();
-</script>
 """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
