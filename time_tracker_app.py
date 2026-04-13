@@ -56,32 +56,50 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
-html, body, [class*="css"] {
-    font-family: 'Inter', Arial, sans-serif;
-}
-
 /* ══════════════════════════════════════════════════════
-   FORCE DARK THEME — overrides system light mode
+   FORCE DARK THEME — override Streamlit CSS variables
    ══════════════════════════════════════════════════════ */
 
-/* App backgrounds */
-.stApp,
-[data-testid="stAppViewContainer"],
-[data-testid="stMain"],
-[data-testid="block-container"],
-section.main {
+/* Override the CSS custom properties Streamlit uses for theming */
+:root {
+    --background-color: #171717 !important;
+    --secondary-background-color: #282828 !important;
+    --text-color: #FCFCFC !important;
+    --primary-color: #B4E817 !important;
+    --font: 'Inter', Arial, sans-serif !important;
+}
+
+html, body {
+    font-family: 'Inter', Arial, sans-serif !important;
     background-color: #171717 !important;
+    color: #FCFCFC !important;
+}
+
+/* Every container that can show a white background */
+.stApp,
+.stApp > header,
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewContainer"] > section,
+[data-testid="stMain"],
+[data-testid="stMain"] > div,
+[data-testid="block-container"],
+section.main,
+.main,
+.main > div {
+    background-color: #171717 !important;
+    background: #171717 !important;
     color: #FCFCFC !important;
 }
 
 /* All text */
 p, span, label, div, li, a,
 h1, h2, h3, h4, h5, h6,
-.stMarkdown, [data-testid="stMarkdownContainer"] {
+.stMarkdown, [data-testid="stMarkdownContainer"],
+[data-testid="stText"] {
     color: #FCFCFC !important;
 }
 
-/* Text inputs & number inputs */
+/* Text / number / date inputs */
 [data-testid="stTextInput"] input,
 [data-testid="stNumberInput"] input,
 [data-testid="stDateInput"] input,
@@ -91,15 +109,13 @@ h1, h2, h3, h4, h5, h6,
     border-color: #4F4F4F !important;
 }
 
-/* Selectboxes */
+/* Selectboxes & dropdowns */
 [data-baseweb="select"] > div,
 [data-baseweb="select"] * {
     background-color: #282828 !important;
     color: #FCFCFC !important;
     border-color: #4F4F4F !important;
 }
-
-/* Dropdown menus */
 [data-baseweb="popover"],
 [data-baseweb="menu"],
 [role="listbox"],
@@ -110,62 +126,71 @@ h1, h2, h3, h4, h5, h6,
 
 /* Expanders */
 [data-testid="stExpander"],
-[data-testid="stExpander"] summary {
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] > div {
     background-color: #282828 !important;
     border-color: #4F4F4F !important;
     color: #FCFCFC !important;
 }
 
-/* Radio & checkbox labels */
+/* Radio & checkbox */
 [data-testid="stRadio"] label,
-[data-testid="stCheckbox"] label {
+[data-testid="stCheckbox"] label,
+[data-testid="stRadio"] div,
+[data-testid="stCheckbox"] div {
     color: #FCFCFC !important;
+    background-color: transparent !important;
 }
 
-/* Data editor / dataframe */
+/* Data editor */
 [data-testid="stDataFrameResizable"],
 [data-testid="data-grid-canvas"],
 .dvn-scroller {
     background-color: #282828 !important;
 }
 
-/* Caption / helper text */
-[data-testid="stCaptionContainer"],
-.stCaption {
+/* Caption text */
+[data-testid="stCaptionContainer"], .stCaption, small {
     color: #9E9E9E !important;
 }
 
 /* Dividers */
-hr {
-    border-color: #4F4F4F !important;
-}
-
-/* Hide the theme switcher from the hamburger menu */
-[data-testid="main-menu-list"] li:has(span:contains("Settings")) {
-    display: none !important;
-}
+hr { border-color: #4F4F4F !important; }
 
 /* ── Sidebar ── */
-section[data-testid="stSidebar"] {
+section[data-testid="stSidebar"],
+section[data-testid="stSidebar"] > div {
     background-color: #171717 !important;
     border-right: 1px solid #282828;
 }
 section[data-testid="stSidebar"] * {
     color: #FCFCFC !important;
+    background-color: transparent;
+}
+section[data-testid="stSidebar"] button {
+    background-color: #282828 !important;
+    border-color: #4F4F4F !important;
 }
 
 /* ── Metric cards ── */
 div[data-testid="stMetric"] {
-    background: #282828;
+    background: #282828 !important;
     border-radius: 6px;
     padding: 12px 16px;
     border-left: 3px solid #B4E817;
+}
+div[data-testid="stMetric"] * {
+    color: #FCFCFC !important;
 }
 
 /* ── Tab active indicator ── */
 div[data-testid="stTabs"] button[aria-selected="true"] {
     color: #B4E817 !important;
     border-bottom-color: #B4E817 !important;
+}
+div[data-testid="stTabs"] button {
+    color: #9E9E9E !important;
+    background-color: transparent !important;
 }
 
 /* ── Primary buttons ── */
@@ -181,6 +206,13 @@ div[data-testid="stTabs"] button[aria-selected="true"] {
     color: #171717 !important;
 }
 
+/* ── Secondary buttons ── */
+.stButton > button:not([kind="primary"]) {
+    background-color: #282828 !important;
+    color: #FCFCFC !important;
+    border-color: #4F4F4F !important;
+}
+
 /* ── Category section headers ── */
 .cat-header {
     background: #282828;
@@ -188,13 +220,51 @@ div[data-testid="stTabs"] button[aria-selected="true"] {
     padding: 6px 12px;
     border-radius: 0 4px 4px 0;
     font-weight: 600;
-    color: #FCFCFC;
+    color: #FCFCFC !important;
     font-size: 0.88rem;
     letter-spacing: 0.03em;
     margin-top: 14px;
     margin-bottom: 4px;
 }
 </style>
+
+<script>
+// Force Streamlit to use dark theme by writing to its localStorage key.
+// Runs once and also watches for Streamlit re-hydration that might reset it.
+(function () {
+    function lock() {
+        try {
+            Object.defineProperty(window, '__streamlit_theme', {
+                get: function() { return 'dark'; },
+                configurable: true
+            });
+            localStorage.setItem('theme', 'Dark');
+        } catch(e) {}
+
+        // Also stamp the CSS variable directly on the root element
+        var root = document.documentElement;
+        root.style.setProperty('--background-color', '#171717');
+        root.style.setProperty('--secondary-background-color', '#282828');
+        root.style.setProperty('--text-color', '#FCFCFC');
+        root.style.setProperty('--primary-color', '#B4E817');
+
+        // Force app background
+        var app = document.querySelector('.stApp');
+        if (app) { app.style.background = '#171717'; }
+        var main = document.querySelector('[data-testid="stMain"]');
+        if (main) { main.style.background = '#171717'; }
+    }
+
+    lock();
+    // Re-apply after Streamlit finishes its own rendering
+    setTimeout(lock, 500);
+    setTimeout(lock, 1500);
+
+    // Watch for Streamlit re-injecting theme styles
+    var obs = new MutationObserver(lock);
+    obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+})();
+</script>
 """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
