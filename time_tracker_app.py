@@ -3085,12 +3085,82 @@ def view_building_kpis():
         return
 
     START = "2018-01-01"
+    FIRST_YEAR = 2018
 
-    # ── Refresh button ────────────────────────────────────────────────────────
-    if st.button("Refresh Database Data", use_container_width=False):
+    # ── Controls: filter mode + refresh ──────────────────────────────────────
+    ctrl_col, _ = st.columns([3, 4])
+    current_year = date.today().year
+
+    filter_mode = ctrl_col.radio(
+        "Filter by:",
+        ["All years", "Year", "Custom date range"],
+        horizontal=True,
+        key="bldg_filter_mode",
+    )
+
+    selected_year = None
+    custom_start = None
+    custom_end   = None
+
+    if filter_mode == "Year":
+        year_options = [str(y) for y in range(FIRST_YEAR, current_year + 1)]
+        selected_year = ctrl_col.selectbox(
+            "Select year:", year_options,
+            index=len(year_options) - 1,
+            key="bldg_year_filter",
+        )
+
+    elif filter_mode == "Custom date range":
+        date_col1, date_col2 = ctrl_col.columns(2)
+        custom_start = date_col1.date_input(
+            "From:", value=date(FIRST_YEAR, 1, 1),
+            min_value=date(FIRST_YEAR, 1, 1), max_value=date.today(),
+            key="bldg_custom_start",
+        )
+        custom_end = date_col2.date_input(
+            "To:", value=date.today(),
+            min_value=date(FIRST_YEAR, 1, 1), max_value=date.today(),
+            key="bldg_custom_end",
+        )
+        if custom_start > custom_end:
+            ctrl_col.warning("'From' date must be before 'To' date.")
+            custom_start, custom_end = custom_end, custom_start
+
+    if ctrl_col.button("Refresh Database Data"):
         _bldg_query.clear()
         _get_mysql_conn.clear()
         st.rerun()
+
+    # Build SQL date range clauses based on selection
+    if filter_mode == "All years":
+        filt_b = f"b.date_create >= '{START}'"
+        filt_h = f"h.created_at  >= '{START}'"
+        filt_b_pie = "1=1"
+        filt_reno_date = (
+            f"GREATEST(COALESCE(b.date_create,'1900-01-01'),"
+            f"COALESCE(b.date_update,'1900-01-01')) >= '{START}'"
+        )
+    elif filter_mode == "Year":
+        yr = selected_year
+        filt_b = f"b.date_create BETWEEN '{yr}-01-01' AND '{yr}-12-31'"
+        filt_h = f"h.created_at  BETWEEN '{yr}-01-01' AND '{yr}-12-31'"
+        filt_b_pie = f"b.date_create BETWEEN '{yr}-01-01' AND '{yr}-12-31'"
+        filt_reno_date = (
+            f"GREATEST(COALESCE(b.date_create,'1900-01-01'),"
+            f"COALESCE(b.date_update,'1900-01-01'))"
+            f" BETWEEN '{yr}-01-01' AND '{yr}-12-31'"
+        )
+    else:  # Custom date range
+        s = custom_start.strftime("%Y-%m-%d")
+        e = custom_end.strftime("%Y-%m-%d")
+        filt_b = f"b.date_create BETWEEN '{s}' AND '{e}'"
+        filt_h = f"h.created_at  BETWEEN '{s}' AND '{e}'"
+        filt_b_pie = f"b.date_create BETWEEN '{s}' AND '{e}'"
+        filt_reno_date = (
+            f"GREATEST(COALESCE(b.date_create,'1900-01-01'),"
+            f"COALESCE(b.date_update,'1900-01-01'))"
+            f" BETWEEN '{s}' AND '{e}'"
+        )
 
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 1 — OVERALL DATABASE
@@ -3136,7 +3206,7 @@ def view_building_kpis():
                COUNT(*) AS count
         FROM   ctbuh_building b
         WHERE  b.deleted_at IS NULL
-          AND  b.date_create >= '{START}'
+          AND  {filt_b}
         GROUP  BY month
         ORDER  BY month
     """)
@@ -3148,7 +3218,7 @@ def view_building_kpis():
         FROM   history h
         WHERE  h.model_type = 'Building'
           AND  h.type = 'Update'
-          AND  h.created_at >= '{START}'
+          AND  {filt_h}
           AND  DATE_FORMAT(h.created_at, '%Y-%m') NOT IN ('2021-06', '2022-10')
         GROUP  BY month
         ORDER  BY month
@@ -3161,7 +3231,7 @@ def view_building_kpis():
         FROM   history h
         WHERE  h.model_type = 'Image'
           AND  h.type = 'Create'
-          AND  h.created_at >= '{START}'
+          AND  {filt_h}
         GROUP  BY month
         ORDER  BY month
     """)
@@ -3173,7 +3243,7 @@ def view_building_kpis():
         FROM   history h
         WHERE  h.model_type = 'Building'
           AND  h.type IN ('attach_company', 'detach_company')
-          AND  h.created_at >= '{START}'
+          AND  {filt_h}
         GROUP  BY month
         ORDER  BY month
     """)
@@ -3209,6 +3279,7 @@ def view_building_kpis():
           COUNT(*) AS count
         FROM   ctbuh_building b
         WHERE  b.deleted_at IS NULL
+          AND  {filt_b_pie}
         GROUP  BY function_group
         ORDER  BY count DESC
     """)
@@ -3232,6 +3303,7 @@ def view_building_kpis():
           COUNT(*) AS count
         FROM   ctbuh_building b
         WHERE  b.deleted_at IS NULL
+          AND  {filt_b_pie}
         GROUP  BY material_group
         ORDER  BY count DESC
     """)
@@ -3258,10 +3330,7 @@ def view_building_kpis():
               OR UPPER(TRIM(b.status)) = 'UREN'
               OR UPPER(TRIM(lb.status)) = 'UREN'
           )
-          AND  GREATEST(
-                 COALESCE(b.date_create, '1900-01-01'),
-                 COALESCE(b.date_update, '1900-01-01')
-               ) >= '{START}'
+          AND  {filt_reno_date}
         GROUP  BY month
         ORDER  BY month
     """)
