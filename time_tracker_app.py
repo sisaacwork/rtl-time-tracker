@@ -3127,12 +3127,13 @@ def view_building_kpis():
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # ── 1. New buildings added ────────────────────────────────────────────────
+    # NOTE: ctbuh_building uses date_create / date_update (not created_at / updated_at)
     df_new_bldg = _bldg_query(f"""
-        SELECT DATE_FORMAT(b.created_at, '%Y-%m') AS month,
+        SELECT DATE_FORMAT(b.date_create, '%Y-%m') AS month,
                COUNT(*) AS count
         FROM   ctbuh_building b
         WHERE  b.deleted_at IS NULL
-          AND  b.created_at >= '{START}'
+          AND  b.date_create >= '{START}'
         GROUP  BY month
         ORDER  BY month
     """)
@@ -3187,16 +3188,17 @@ def view_building_kpis():
     st.markdown("### Buildings")
 
     # ── 5. Buildings by function (pie) ────────────────────────────────────────
+    # main_use_01/02 are enums — use exact value matching
     df_func = _bldg_query(f"""
         SELECT
           CASE
-            WHEN b.main_use_02 IS NOT NULL AND b.main_use_02 != ''
+            WHEN b.main_use_02 != ''
                  THEN 'Mixed-Use'
-            WHEN LOWER(b.main_use_01) LIKE '%office%'
+            WHEN b.main_use_01 = 'office'
                  THEN 'All-Office'
-            WHEN LOWER(b.main_use_01) LIKE '%residential%'
+            WHEN b.main_use_01 = 'residential'
                  THEN 'All-Residential'
-            WHEN LOWER(b.main_use_01) LIKE '%hotel%'
+            WHEN b.main_use_01 = 'hotel'
                  THEN 'All-Hotel'
             ELSE 'Other'
           END AS function_group,
@@ -3208,21 +3210,19 @@ def view_building_kpis():
     """)
 
     # ── 6. Buildings by structural material (pie) ─────────────────────────────
+    # structural_material is an enum — use exact value matching
     df_mat = _bldg_query(f"""
         SELECT
-          CASE
-            WHEN LOWER(b.structural_material) LIKE '%steel%'
-             AND LOWER(b.structural_material) LIKE '%concrete%'
-                 THEN 'Mixed'
-            WHEN LOWER(b.structural_material) LIKE '%steel%'
-                 THEN 'All-Steel'
-            WHEN LOWER(b.structural_material) LIKE '%concrete%'
-                 THEN 'All-Concrete'
-            WHEN LOWER(b.structural_material) LIKE '%composite%'
-                 THEN 'Composite'
-            WHEN LOWER(b.structural_material) LIKE '%timber%'
-              OR LOWER(b.structural_material) LIKE '%wood%'
-                 THEN 'Timber'
+          CASE b.structural_material
+            WHEN 'steel'                     THEN 'All-Steel'
+            WHEN 'concrete'                  THEN 'All-Concrete'
+            WHEN 'composite'                 THEN 'Composite'
+            WHEN 'timber'                    THEN 'Timber'
+            WHEN 'timber/concrete'           THEN 'Timber'
+            WHEN 'timber/composite'          THEN 'Timber'
+            WHEN 'timber composite/concrete' THEN 'Timber'
+            WHEN 'concrete/steel'            THEN 'Mixed'
+            WHEN 'steel/concrete'            THEN 'Mixed'
             ELSE 'Other/Unknown'
           END AS material_group,
           COUNT(*) AS count
@@ -3236,8 +3236,8 @@ def view_building_kpis():
     df_reno = _bldg_query(f"""
         SELECT DATE_FORMAT(
                  GREATEST(
-                   COALESCE(b.created_at, '1900-01-01'),
-                   COALESCE(b.updated_at, '1900-01-01')
+                   COALESCE(b.date_create, '1900-01-01'),
+                   COALESCE(b.date_update, '1900-01-01')
                  ), '%Y-%m'
                ) AS month,
                COUNT(DISTINCT b.id) AS count
@@ -3255,8 +3255,8 @@ def view_building_kpis():
               OR UPPER(TRIM(lb.status)) = 'UREN'
           )
           AND  GREATEST(
-                 COALESCE(b.created_at, '1900-01-01'),
-                 COALESCE(b.updated_at, '1900-01-01')
+                 COALESCE(b.date_create, '1900-01-01'),
+                 COALESCE(b.date_update, '1900-01-01')
                ) >= '{START}'
         GROUP  BY month
         ORDER  BY month
