@@ -3019,6 +3019,288 @@ def view_landing():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# VIEW: BUILDING KPIs
+# ══════════════════════════════════════════════════════════════════════════════
+
+@st.cache_resource(show_spinner=False)
+def _get_mysql_conn():
+    """Return a live mysql-connector connection using secrets, or None on error."""
+    try:
+        import mysql.connector
+        try:
+            cfg = st.secrets.get("mysql", {})
+        except Exception:
+            cfg = {}
+        return mysql.connector.connect(
+            host     = cfg.get("host", "localhost"),
+            port     = int(cfg.get("port", 3306)),
+            database = cfg.get("database", ""),
+            user     = cfg.get("user", ""),
+            password = cfg.get("password", ""),
+            connection_timeout = 10,
+        )
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _bldg_query(sql: str) -> pd.DataFrame:
+    """Run a read-only MySQL query and return a DataFrame. Cached 1 hr."""
+    conn = _get_mysql_conn()
+    if conn is None:
+        return pd.DataFrame()
+    try:
+        # Reconnect if the connection dropped
+        if not conn.is_connected():
+            conn.reconnect(attempts=2, delay=1)
+        return pd.read_sql(sql, conn)
+    except Exception as e:
+        st.error(f"Database query failed: {e}")
+        return pd.DataFrame()
+
+
+def view_building_kpis():
+    c = _chart_colors()
+
+    # ── Credential check ──────────────────────────────────────────────────────
+    try:
+        _has_mysql = "mysql" in st.secrets
+    except Exception:
+        _has_mysql = False
+
+    if not _has_mysql:
+        st.warning(
+            "MySQL credentials not configured. Add a `[mysql]` block to "
+            "`.streamlit/secrets.toml` (local) or to Streamlit Cloud Secrets.",
+        )
+        st.code(
+            "[mysql]\nhost     = \"your-host\"\nport     = 3306\n"
+            "database = \"your-database\"\nuser     = \"your-user\"\n"
+            "password = \"your-password\"",
+            language="toml",
+        )
+        return
+
+    START = "2018-01-01"
+
+    # ── Refresh button ────────────────────────────────────────────────────────
+    if st.button("Refresh Database Data", use_container_width=False):
+        _bldg_query.clear()
+        _get_mysql_conn.clear()
+        st.rerun()
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 1 — OVERALL DATABASE
+    # ══════════════════════════════════════════════════════════════════════════
+    st.markdown("### Overall Database")
+
+    # ── Helper: build a standard monthly line chart ───────────────────────────
+    def _monthly_line(df, y_col, title, color="#B4E817"):
+        if df.empty:
+            st.info(f"No data returned for: {title}")
+            return
+        df = df.copy()
+        df["month"] = pd.to_datetime(df["month"] + "-01")
+        df = df.sort_values("month")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df["month"], y=df[y_col],
+            mode="lines+markers",
+            line=dict(color=color, width=2),
+            marker=dict(size=4, color=color),
+            hovertemplate="%{x|%b %Y}: <b>%{y:,}</b><extra></extra>",
+        ))
+        fig.update_layout(
+            **_chart_base(title=dict(text=title, font=dict(size=14, color=c["text"]))),
+            height=280,
+            xaxis=dict(
+                gridcolor=c["grid"], zerolinecolor=c["grid"],
+                tickfont=dict(color=c["subtext"], size=11),
+                tickformat="%b %Y",
+            ),
+            yaxis=dict(
+                gridcolor=c["grid"], zerolinecolor=c["grid"],
+                tickfont=dict(color=c["subtext"], size=11),
+                tickformat=",d",
+            ),
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    # ── 1. New buildings added ────────────────────────────────────────────────
+    df_new_bldg = _bldg_query(f"""
+        SELECT DATE_FORMAT(b.created_at, '%Y-%m') AS month,
+               COUNT(*) AS count
+        FROM   ctbuh_building b
+        WHERE  b.deleted_at IS NULL
+          AND  b.created_at >= '{START}'
+        GROUP  BY month
+        ORDER  BY month
+    """)
+
+    # ── 2. Building updates ───────────────────────────────────────────────────
+    df_updates = _bldg_query(f"""
+        SELECT DATE_FORMAT(h.created_at, '%Y-%m') AS month,
+               COUNT(*) AS count
+        FROM   history h
+        WHERE  h.model_type = 'Building'
+          AND  h.type = 'Update'
+          AND  h.created_at >= '{START}'
+        GROUP  BY month
+        ORDER  BY month
+    """)
+
+    # ── 3. New images ─────────────────────────────────────────────────────────
+    df_images = _bldg_query(f"""
+        SELECT DATE_FORMAT(h.created_at, '%Y-%m') AS month,
+               COUNT(*) AS count
+        FROM   history h
+        WHERE  h.model_type = 'Image'
+          AND  h.type = 'Create'
+          AND  h.created_at >= '{START}'
+        GROUP  BY month
+        ORDER  BY month
+    """)
+
+    # ── 4. Net company connections ────────────────────────────────────────────
+    df_companies = _bldg_query(f"""
+        SELECT DATE_FORMAT(h.created_at, '%Y-%m') AS month,
+               SUM(CASE WHEN h.type = 'attach_company' THEN 1 ELSE -1 END) AS count
+        FROM   history h
+        WHERE  h.model_type = 'Building'
+          AND  h.type IN ('attach_company', 'detach_company')
+          AND  h.created_at >= '{START}'
+        GROUP  BY month
+        ORDER  BY month
+    """)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        _monthly_line(df_new_bldg,  "count", "New Buildings Added")
+        _monthly_line(df_images,    "count", "New Images Added")
+    with col2:
+        _monthly_line(df_updates,   "count", "Building Updates")
+        _monthly_line(df_companies, "count", "Net Company Connections")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 2 — BUILDINGS
+    # ══════════════════════════════════════════════════════════════════════════
+    st.markdown("### Buildings")
+
+    # ── 5. Buildings by function (pie) ────────────────────────────────────────
+    df_func = _bldg_query(f"""
+        SELECT
+          CASE
+            WHEN b.main_use_02 IS NOT NULL AND b.main_use_02 != ''
+                 THEN 'Mixed-Use'
+            WHEN LOWER(b.main_use_01) LIKE '%office%'
+                 THEN 'All-Office'
+            WHEN LOWER(b.main_use_01) LIKE '%residential%'
+                 THEN 'All-Residential'
+            WHEN LOWER(b.main_use_01) LIKE '%hotel%'
+                 THEN 'All-Hotel'
+            ELSE 'Other'
+          END AS function_group,
+          COUNT(*) AS count
+        FROM   ctbuh_building b
+        WHERE  b.deleted_at IS NULL
+        GROUP  BY function_group
+        ORDER  BY count DESC
+    """)
+
+    # ── 6. Buildings by structural material (pie) ─────────────────────────────
+    df_mat = _bldg_query(f"""
+        SELECT
+          CASE
+            WHEN LOWER(b.structural_material) LIKE '%steel%'
+             AND LOWER(b.structural_material) LIKE '%concrete%'
+                 THEN 'Mixed'
+            WHEN LOWER(b.structural_material) LIKE '%steel%'
+                 THEN 'All-Steel'
+            WHEN LOWER(b.structural_material) LIKE '%concrete%'
+                 THEN 'All-Concrete'
+            WHEN LOWER(b.structural_material) LIKE '%composite%'
+                 THEN 'Composite'
+            WHEN LOWER(b.structural_material) LIKE '%timber%'
+              OR LOWER(b.structural_material) LIKE '%wood%'
+                 THEN 'Timber'
+            ELSE 'Other/Unknown'
+          END AS material_group,
+          COUNT(*) AS count
+        FROM   ctbuh_building b
+        WHERE  b.deleted_at IS NULL
+        GROUP  BY material_group
+        ORDER  BY count DESC
+    """)
+
+    # ── 7. Renovations & Retrofits over time (line) ───────────────────────────
+    df_reno = _bldg_query(f"""
+        SELECT DATE_FORMAT(
+                 GREATEST(
+                   COALESCE(b.created_at, '1900-01-01'),
+                   COALESCE(b.updated_at, '1900-01-01')
+                 ), '%Y-%m'
+               ) AS month,
+               COUNT(DISTINCT b.id) AS count
+        FROM   ctbuh_building b
+        LEFT JOIN ctbuh_building lb
+               ON lb.id = b.linked_building_id
+              AND lb.deleted_at IS NULL
+        WHERE  b.deleted_at IS NULL
+          AND  (
+                 (b.retrofit_start IS NOT NULL AND b.retrofit_start != 0)
+              OR (b.retrofit_end   IS NOT NULL AND b.retrofit_end   != 0)
+              OR (b.recladding_year IS NOT NULL AND b.recladding_year != 0)
+              OR UPPER(TRIM(b.linked_building_status)) = 'RENOVATED'
+              OR UPPER(TRIM(b.status)) = 'UREN'
+              OR UPPER(TRIM(lb.status)) = 'UREN'
+          )
+          AND  GREATEST(
+                 COALESCE(b.created_at, '1900-01-01'),
+                 COALESCE(b.updated_at, '1900-01-01')
+               ) >= '{START}'
+        GROUP  BY month
+        ORDER  BY month
+    """)
+
+    # ── Pie chart helper ──────────────────────────────────────────────────────
+    def _pie(df, label_col, value_col, title):
+        if df.empty:
+            st.info(f"No data for: {title}")
+            return
+        PALETTE = [
+            "#B4E817", "#4FC3F7", "#FF8A65", "#CE93D8",
+            "#80CBC4", "#FFD54F", "#EF9A9A", "#A5D6A7",
+        ]
+        fig = go.Figure(go.Pie(
+            labels=df[label_col],
+            values=df[value_col],
+            marker=dict(colors=PALETTE[:len(df)]),
+            textfont=dict(color="#171717", size=12),
+            hovertemplate="<b>%{label}</b><br>%{value:,} (%{percent})<extra></extra>",
+            hole=0.35,
+        ))
+        fig.update_layout(
+            **_chart_base(title=dict(text=title, font=dict(size=14, color=c["text"]))),
+            height=340,
+            legend=dict(
+                bgcolor="rgba(0,0,0,0)",
+                font=dict(color=c["text"], size=11),
+            ),
+            showlegend=True,
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    pie_col1, pie_col2 = st.columns(2)
+    with pie_col1:
+        _pie(df_func, "function_group", "count", "Buildings by Function")
+    with pie_col2:
+        _pie(df_mat,  "material_group", "count", "Buildings by Structural Material")
+
+    _monthly_line(df_reno, "count", "Renovations & Retrofits Added / Updated Over Time",
+                  color="#4FC3F7")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR + MAIN APP
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -3045,7 +3327,7 @@ def main():
             st.divider()
             kpi_mode = st.radio(
                 "KPI Module",
-                options=["Time KPIs", "Financial KPIs", "Content KPIs"],
+                options=["Time KPIs", "Financial KPIs", "Content KPIs", "Building KPIs"],
                 key="admin_kpi_mode",
             )
             st.divider()
@@ -3074,9 +3356,12 @@ def main():
         elif kpi_mode == "Financial KPIs":
             st.title("Financial KPIs")
             view_financial_kpis()
-        else:
+        elif kpi_mode == "Content KPIs":
             st.title("Content KPIs")
             view_content_kpis()
+        else:
+            st.title("Building KPIs")
+            view_building_kpis()
         return
 
     # ══════════════════════════════════════════════════════════════════════════
