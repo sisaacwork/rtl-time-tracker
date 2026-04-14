@@ -3022,7 +3022,7 @@ def view_landing():
                     f"<div style='background:#282828;border:1px solid #4F4F4F;"
                     f"border-left:4px solid #B4E817;border-radius:6px;"
                     f"padding:18px 16px;margin-bottom:4px;'>"
-                    f"<span style='color:#FCFCFC;font-family:Inter,Arial,sans-serif;"
+                    f"<span style='color:#171717;font-family:Inter,Arial,sans-serif;"
                     f"font-weight:600;font-size:1rem'>{name}</span></div>",
                     unsafe_allow_html=True,
                 )
