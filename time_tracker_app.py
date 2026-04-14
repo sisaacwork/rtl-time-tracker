@@ -52,7 +52,28 @@ CVU_PALETTE = [
     "#FA3F26",
 ]
 
-# CSS is injected inside main() via _inject_css() so it adapts to the dark/light toggle.
+# ── Module-level base CSS ─────────────────────────────────────────────────────
+# This runs before main() so the dark background loads instantly on every
+# page render, before Streamlit's React app can inject its own theme.
+# _inject_css() inside main() then handles the full theme (dark vs light).
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+html, body,
+html body .stApp,
+html body [data-testid="stAppViewContainer"],
+html body [data-testid="stAppViewContainer"] > section,
+html body section[data-testid="stMain"],
+html body section[data-testid="stMain"] > div,
+html body [data-testid="block-container"],
+html body div.block-container {
+    background-color: #171717 !important;
+    background: #171717 !important;
+    color: #FCFCFC !important;
+    font-family: 'Inter', Arial, sans-serif !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CONFIGURATION
@@ -1889,155 +1910,174 @@ def _inject_css(dark_mode: bool):
 
     st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* ════════════════════════════════════════════════════════════════
+   MAIN CONTENT — use html body prefix for higher specificity
+   so we beat Streamlit's own theme injection
+   ════════════════════════════════════════════════════════════════ */
 
-/* ── Base ── */
 html, body {{
     font-family: 'Inter', Arial, sans-serif !important;
-    background-color: {bg} !important;
-    color: {text} !important;
-}}
-
-/* ── App containers ── */
-.stApp,
-.stApp > header,
-[data-testid="stAppViewContainer"],
-[data-testid="stAppViewContainer"] > section,
-[data-testid="stMain"],
-[data-testid="stMain"] > div,
-[data-testid="block-container"],
-section.main, .main, .main > div {{
-    background-color: {bg} !important;
     background: {bg} !important;
+    background-color: {bg} !important;
     color: {text} !important;
 }}
 
-/* ── All text ── */
-p, span, label, div, li, a,
-h1, h2, h3, h4, h5, h6,
-.stMarkdown, [data-testid="stMarkdownContainer"],
-[data-testid="stText"] {{
+/* Chain html + body to raise specificity above Streamlit's :root vars */
+html body .stApp,
+html body .stApp > header,
+html body [data-testid="stAppViewContainer"],
+html body [data-testid="stAppViewContainer"] > section,
+html body section[data-testid="stMain"],
+html body section[data-testid="stMain"] > div,
+html body [data-testid="block-container"],
+html body div.block-container,
+html body section.main,
+html body .main,
+html body .main > div {{
+    background: {bg} !important;
+    background-color: {bg} !important;
     color: {text} !important;
+    font-family: 'Inter', Arial, sans-serif !important;
+}}
+
+/* ── All text in main content ── */
+html body .stApp p,
+html body .stApp span,
+html body .stApp label,
+html body .stApp div,
+html body .stApp li,
+html body .stApp a,
+html body .stApp h1,
+html body .stApp h2,
+html body .stApp h3,
+html body .stApp h4,
+html body .stApp h5,
+html body .stApp h6,
+html body .stApp [data-testid="stMarkdownContainer"],
+html body .stApp [data-testid="stText"] {{
+    color: {text} !important;
+}}
+
+/* ── Caption / secondary text ── */
+html body .stApp [data-testid="stCaptionContainer"],
+html body .stApp .stCaption,
+html body .stApp small {{
+    color: {caption_col} !important;
 }}
 
 /* ── Text / number / date inputs ── */
-[data-testid="stTextInput"] input,
-[data-testid="stNumberInput"] input,
-[data-testid="stDateInput"] input,
-[data-testid="stTextArea"] textarea {{
+html body [data-testid="stTextInput"] input,
+html body [data-testid="stNumberInput"] input,
+html body [data-testid="stDateInput"] input,
+html body [data-testid="stTextArea"] textarea {{
+    background: {input_bg} !important;
     background-color: {input_bg} !important;
     color: {text} !important;
     border-color: {border} !important;
 }}
 
 /* ── Selectboxes & dropdowns ── */
-[data-baseweb="select"] > div,
-[data-baseweb="select"] * {{
+html body [data-baseweb="select"] > div,
+html body [data-baseweb="select"] * {{
+    background: {input_bg} !important;
     background-color: {input_bg} !important;
     color: {text} !important;
     border-color: {border} !important;
 }}
-[data-baseweb="popover"],
-[data-baseweb="menu"],
-[role="listbox"],
-[role="option"] {{
+html body [data-baseweb="popover"],
+html body [data-baseweb="menu"],
+html body [role="listbox"],
+html body [role="option"] {{
+    background: {input_bg} !important;
     background-color: {input_bg} !important;
     color: {text} !important;
 }}
 
 /* ── Expanders ── */
-[data-testid="stExpander"],
-[data-testid="stExpander"] summary,
-[data-testid="stExpander"] > div {{
+html body [data-testid="stExpander"],
+html body [data-testid="stExpander"] summary,
+html body [data-testid="stExpander"] > div {{
+    background: {card_bg} !important;
     background-color: {card_bg} !important;
     border-color: {border} !important;
     color: {text} !important;
 }}
 
-/* ── Radio & checkbox ── */
-[data-testid="stRadio"] label,
-[data-testid="stCheckbox"] label,
-[data-testid="stRadio"] div,
-[data-testid="stCheckbox"] div {{
+/* ── Radio & checkbox (main content) ── */
+html body [data-testid="stRadio"],
+html body [data-testid="stRadio"] label,
+html body [data-testid="stRadio"] div,
+html body [data-testid="stCheckbox"] label,
+html body [data-testid="stCheckbox"] div {{
     color: {text} !important;
     background-color: transparent !important;
 }}
 
 /* ── Data editor ── */
-[data-testid="stDataFrameResizable"],
-[data-testid="data-grid-canvas"],
-.dvn-scroller {{
+html body [data-testid="stDataFrameResizable"],
+html body [data-testid="data-grid-canvas"],
+html body .dvn-scroller {{
+    background: {card_bg} !important;
     background-color: {card_bg} !important;
 }}
 
-/* ── Caption / secondary text ── */
-[data-testid="stCaptionContainer"], .stCaption, small {{
-    color: {caption_col} !important;
-}}
-
 /* ── Dividers ── */
-hr {{ border-color: {border} !important; }}
-
-/* ── Sidebar — always dark ── */
-section[data-testid="stSidebar"],
-section[data-testid="stSidebar"] > div {{
-    background-color: #171717 !important;
-    border-right: 1px solid #282828;
-}}
-section[data-testid="stSidebar"] * {{
-    color: #FCFCFC !important;
-    background-color: transparent;
-}}
-section[data-testid="stSidebar"] button {{
-    background-color: #282828 !important;
-    border-color: #4F4F4F !important;
-    color: #FCFCFC !important;
-}}
+html body hr {{ border-color: {border} !important; }}
 
 /* ── Metric cards ── */
-div[data-testid="stMetric"] {{
+html body div[data-testid="stMetric"] {{
     background: {card_bg} !important;
+    background-color: {card_bg} !important;
     border-radius: 6px;
     padding: 12px 16px;
     border-left: 3px solid {accent};
 }}
-div[data-testid="stMetric"] * {{
+html body div[data-testid="stMetric"] label,
+html body div[data-testid="stMetric"] p,
+html body div[data-testid="stMetric"] span,
+html body div[data-testid="stMetric"] div,
+html body div[data-testid="stMetric"] [data-testid="stMetricValue"],
+html body div[data-testid="stMetric"] [data-testid="stMetricLabel"],
+html body div[data-testid="stMetric"] [data-testid="stMetricDelta"] {{
     color: {text} !important;
 }}
 
 /* ── Tab active indicator ── */
-div[data-testid="stTabs"] button[aria-selected="true"] {{
+html body div[data-testid="stTabs"] button[aria-selected="true"] {{
     color: {accent} !important;
     border-bottom-color: {accent} !important;
 }}
-div[data-testid="stTabs"] button {{
+html body div[data-testid="stTabs"] button {{
     color: {tab_idle} !important;
     background-color: transparent !important;
 }}
 
 /* ── Primary buttons ── */
-.stButton > button[kind="primary"] {{
+html body .stButton > button[kind="primary"] {{
+    background: {accent} !important;
     background-color: {accent} !important;
     color: #171717 !important;
     font-weight: 600;
     border: none;
     font-family: 'Inter', Arial, sans-serif;
 }}
-.stButton > button[kind="primary"]:hover {{
+html body .stButton > button[kind="primary"]:hover {{
     filter: brightness(1.1);
     color: #171717 !important;
 }}
 
 /* ── Secondary buttons ── */
-.stButton > button:not([kind="primary"]) {{
+html body .stButton > button:not([kind="primary"]) {{
+    background: {btn2_bg} !important;
     background-color: {btn2_bg} !important;
     color: {btn2_text} !important;
     border-color: {btn2_border} !important;
 }}
 
 /* ── Category section headers ── */
-.cat-header {{
-    background: {card_bg};
+html body .cat-header {{
+    background: {card_bg} !important;
+    background-color: {card_bg} !important;
     border-left: 3px solid {accent};
     padding: 6px 12px;
     border-radius: 0 4px 4px 0;
@@ -2047,6 +2087,62 @@ div[data-testid="stTabs"] button {{
     letter-spacing: 0.03em;
     margin-top: 14px;
     margin-bottom: 4px;
+}}
+
+/* ════════════════════════════════════════════════════════════════
+   SIDEBAR — always dark, full specificity chain
+   ════════════════════════════════════════════════════════════════ */
+
+html body section[data-testid="stSidebar"],
+html body section[data-testid="stSidebar"] > div,
+html body section[data-testid="stSidebar"] > div > div {{
+    background: #171717 !important;
+    background-color: #171717 !important;
+    border-right: 1px solid #282828;
+}}
+
+/* All text in sidebar */
+html body section[data-testid="stSidebar"] p,
+html body section[data-testid="stSidebar"] span,
+html body section[data-testid="stSidebar"] label,
+html body section[data-testid="stSidebar"] div,
+html body section[data-testid="stSidebar"] h1,
+html body section[data-testid="stSidebar"] h2,
+html body section[data-testid="stSidebar"] h3 {{
+    color: #FCFCFC !important;
+}}
+
+/* Sidebar inner widget containers — transparent so #171717 shows */
+html body section[data-testid="stSidebar"] > div > div > div,
+html body section[data-testid="stSidebar"] [data-testid="stRadio"],
+html body section[data-testid="stSidebar"] [data-testid="stRadio"] > div,
+html body section[data-testid="stSidebar"] [data-baseweb="radio-group"],
+html body section[data-testid="stSidebar"] [role="radiogroup"],
+html body section[data-testid="stSidebar"] label[data-baseweb="radio"],
+html body section[data-testid="stSidebar"] [data-testid="stCheckbox"],
+html body section[data-testid="stSidebar"] .element-container,
+html body section[data-testid="stSidebar"] .stRadio,
+html body section[data-testid="stSidebar"] .stCheckbox {{
+    background: transparent !important;
+    background-color: transparent !important;
+}}
+
+/* Sidebar buttons — explicitly dark */
+html body section[data-testid="stSidebar"] button,
+html body section[data-testid="stSidebar"] .stButton > button {{
+    background: #282828 !important;
+    background-color: #282828 !important;
+    border-color: #4F4F4F !important;
+    color: #FCFCFC !important;
+}}
+
+/* Sidebar selectboxes */
+html body section[data-testid="stSidebar"] [data-baseweb="select"] > div,
+html body section[data-testid="stSidebar"] [data-baseweb="select"] * {{
+    background: #282828 !important;
+    background-color: #282828 !important;
+    color: #FCFCFC !important;
+    border-color: #4F4F4F !important;
 }}
 </style>
 """, unsafe_allow_html=True)
