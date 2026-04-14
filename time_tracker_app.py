@@ -216,6 +216,7 @@ SPONSORSHIP_TYPES  = ["Program Partnership", "Commissioned Research", "VU Advert
 PROJECT_STATUSES   = [
     "Obligatory sponsor deliverable",
     "Internal commitment",
+    "Internal idea",
     "Project completed",
 ]
 FORMAT_TYPES       = ["Digital", "Print", "Both", "TBD"]
@@ -227,7 +228,7 @@ CONTENT_GENERATORS = [
     "Committee",
     "External Contributors",
 ]
-FUNDING_SOURCES    = ["Conference Sponsor", "Program Partner", "Commissioned Research"]
+FUNDING_SOURCES    = ["Conference Sponsor", "Program Partner", "Commissioned Research", "Sales", "None"]
 
 # Column order for the projects sheet — do not reorder without a migration
 PROJECTS_COLS = [
@@ -2086,6 +2087,18 @@ def _progress_from_override(pct: int):
     return pct, p1, p2, p3
 
 
+def _compute_project_pct(row) -> int:
+    """Return the effective % complete for a project row (override takes priority)."""
+    try:
+        ov = int(float(row.get("pct_override", 0) or 0))
+    except (ValueError, TypeError):
+        ov = 0
+    if ov > 0:
+        return ov
+    total, _, _, _ = _content_progress(row)
+    return total
+
+
 def _next_milestone(proj: dict):
     """
     Return (date_str, display_name) for the earliest future milestone,
@@ -2312,7 +2325,7 @@ def view_content_kpis():
             index=_idx(["Confirmed", "Pending"],
                        edit_proj.get("confirmed_pending", "Confirmed")),
         )
-        cp_status    = h1.selectbox("Status", PROJECT_STATUSES, key="cp_status",
+        cp_status    = h1.selectbox("Priority", PROJECT_STATUSES, key="cp_status",
                                     index=_idx(PROJECT_STATUSES, edit_proj.get("status")))
         cp_format    = h2.selectbox("Format", FORMAT_TYPES, key="cp_format",
                                     index=_idx(FORMAT_TYPES, edit_proj.get("format")))
@@ -2515,6 +2528,220 @@ def view_content_kpis():
         st.info("No projects yet — use the form above to add your first project.")
         return
 
+    # ── Key Metrics ───────────────────────────────────────────────────────────
+    st.markdown("##### Key Metrics")
+
+    # Confirmed-only subset (handle projects saved before confirmed_pending existed)
+    def _is_confirmed(row):
+        return str(row.get("confirmed_pending", "Confirmed") or "Confirmed") == "Confirmed"
+
+    confirmed = projects[projects.apply(_is_confirmed, axis=1)]
+    conf_pcts  = (confirmed.apply(_compute_project_pct, axis=1)
+                  if not confirmed.empty else pd.Series(dtype=float))
+    avg_pct    = round(conf_pcts.mean()) if not conf_pcts.empty else 0
+
+    pillar_counts = projects["pillar"].value_counts()
+    active_pillars = [p for p in all_pillars if pillar_counts.get(p, 0) > 0]
+
+    km1, km2, km3 = st.columns(3)
+
+    with km1:
+        st.metric("Pieces of Content", len(projects))
+
+    with km2:
+        pillar_lines = "".join(
+            f"<div style='margin:3px 0;font-size:0.8rem'>"
+            f"<span style='color:{_pillar_color(p)}'>\u25cf</span>"
+            f" <span style='color:#FCFCFC'>{p}</span>"
+            f"<span style='color:#9E9E9E'>: {int(pillar_counts.get(p, 0))}</span>"
+            f"</div>"
+            for p in active_pillars
+        )
+        st.markdown(
+            "<div style='background:#282828;border-radius:6px;padding:12px 16px;"
+            "border-left:3px solid #B4E817'>"
+            "<div style='font-size:0.85rem;color:#FCFCFC;margin-bottom:6px'>"
+            "Content by Pillar</div>"
+            f"{pillar_lines}"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+    with km3:
+        st.metric("Avg % Complete", f"{avg_pct}%",
+                  help="Confirmed projects only")
+
+    st.divider()
+
+    # ── Go-Live Timeline ──────────────────────────────────────────────────────
+    st.markdown("##### Go-Live Timeline")
+    tl_key_html = "<div style='display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px'>"
+    for pillar in all_pillars:
+        col = _pillar_color(pillar)
+        tl_key_html += (
+            f"<span style='background:{col}22;color:{col};"
+            f"border:1px solid {col}55;border-radius:10px;"
+            f"font-size:0.75rem;font-weight:600;padding:3px 10px'>{pillar}</span>"
+        )
+    tl_key_html += "</div>"
+    st.markdown(tl_key_html, unsafe_allow_html=True)
+
+    year = date.today().year
+
+    def _parse_gl(v):
+        if not v or str(v) in ("", "None", "NaT", "nan"):
+            return None
+        try:
+            return date.fromisoformat(str(v)[:10])
+        except (ValueError, TypeError):
+            return None
+
+    tl = projects.copy()
+    tl["_gl"] = tl["go_live_date"].apply(_parse_gl)
+    tl = tl[tl["_gl"].apply(lambda d: d is not None and d.year == year)]
+
+    if tl.empty:
+        st.caption("No go-live dates in the current year to display.")
+    else:
+        year_start  = date(year, 1, 1)
+        tl["_week"] = tl["_gl"].apply(lambda d: (d - year_start).days // 7)
+        tl_pillars  = [p for p in all_pillars if p in tl["pillar"].values]
+
+        # Max items stacked per (pillar, week) — used for dynamic row height
+        stacks_df  = (tl.groupby(["pillar", "_week"]).size()
+                        .reset_index(name="cnt"))
+        max_per_p  = stacks_df.groupby("pillar")["cnt"].max()
+
+        # Assign base Y for each pillar, expanding row height for stacks
+        y_bases = {}
+        cur_y   = 0.0
+        for p in tl_pillars:
+            y_bases[p] = cur_y
+            ms   = int(max_per_p.get(p, 1))
+            cur_y += max(1.0, ms * 0.45 + 0.3)
+
+        total_y = cur_y
+        chart_h = max(220, int(total_y * 65) + 80)
+
+        tl = tl.sort_values("_gl")
+        tl["_stack"] = tl.groupby(["pillar", "_week"]).cumcount()
+        tl["_y"]     = tl.apply(
+            lambda r: y_bases.get(str(r["pillar"]), 0) + r["_stack"] * 0.45,
+            axis=1,
+        )
+
+        fig_tl = go.Figure()
+        for pillar in tl_pillars:
+            pdf      = tl[tl["pillar"] == pillar]
+            pc       = _pillar_color(pillar)
+            pct_lbl  = pdf.apply(_compute_project_pct, axis=1).astype(str) + "% complete"
+            conf_lbl = pdf.apply(
+                lambda r: str(r.get("confirmed_pending", "Confirmed") or "Confirmed"),
+                axis=1,
+            ).tolist()
+            opacities = [0.5 if c == "Pending" else 1.0 for c in conf_lbl]
+            fig_tl.add_trace(go.Scatter(
+                x=pdf["_gl"].apply(lambda d: d.isoformat()),
+                y=pdf["_y"],
+                mode="markers",
+                name=pillar,
+                marker=dict(symbol="square", size=18, color=pc, opacity=opacities),
+                customdata=list(zip(pdf["title"].tolist(), pct_lbl.tolist(), conf_lbl)),
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>"
+                    "Go-live: %{x|%Y-%m-%d}<br>"
+                    "%{customdata[1]} · %{customdata[2]}<extra></extra>"
+                ),
+                showlegend=False,
+            ))
+
+        tick_vals = [y_bases[p] for p in tl_pillars]
+        tick_text = [
+            p.replace("Advertising and Sales-Driven", "Advert. & Sales-Driven")
+            for p in tl_pillars
+        ]
+
+        fig_tl.update_layout(**_chart_base(
+            height=chart_h,
+            xaxis=dict(
+                range=[f"{year}-01-01", f"{year}-12-31"],
+                tickformat="%b",
+                dtick="M1",
+                tickfont=dict(color=c_colors["subtext"], size=11,
+                              family="Inter, Arial, sans-serif"),
+                gridcolor=c_colors["grid"],
+                zerolinecolor=c_colors["grid"],
+                showgrid=True,
+            ),
+            yaxis=dict(
+                tickvals=tick_vals,
+                ticktext=tick_text,
+                tickfont=dict(color=c_colors["text"], size=11,
+                              family="Inter, Arial, sans-serif"),
+                showgrid=False,
+                range=[-0.4, total_y],
+                automargin=True,
+            ),
+            showlegend=False,
+            margin=dict(l=10, r=20, t=20, b=40),
+        ))
+
+        st.plotly_chart(fig_tl, use_container_width=True)
+
+    st.divider()
+
+    # ── % Complete by Pillar (Confirmed) ─────────────────────────────────────
+    st.markdown("##### % Complete by Pillar — Confirmed Projects")
+
+    pillar_avgs = {
+        p: round(confirmed[confirmed["pillar"] == p]
+                 .apply(_compute_project_pct, axis=1).mean())
+        for p in all_pillars
+        if not confirmed.empty and not confirmed[confirmed["pillar"] == p].empty
+    }
+
+    if not pillar_avgs:
+        st.caption("No confirmed projects yet.")
+    else:
+        donut_items = list(pillar_avgs.items())
+        for row_start in range(0, len(donut_items), 3):
+            d_cols = st.columns(3)
+            for ci, (pillar, avg) in enumerate(donut_items[row_start:row_start + 3]):
+                pc = _pillar_color(pillar)
+                with d_cols[ci]:
+                    fig_d = go.Figure(go.Pie(
+                        values=[avg, max(0, 100 - avg)],
+                        labels=["Complete", "Remaining"],
+                        hole=0.60,
+                        marker_colors=[pc, "#3A3A3A"],
+                        hoverinfo="skip",
+                        textinfo="none",
+                        sort=False,
+                    ))
+                    fig_d.add_annotation(
+                        text=f"<b>{avg}%</b>",
+                        x=0.5, y=0.5,
+                        font=dict(size=22, color=c_colors["text"],
+                                  family="Inter, Arial, sans-serif"),
+                        showarrow=False,
+                    )
+                    short = pillar if len(pillar) <= 24 else pillar[:22] + "\u2026"
+                    fig_d.update_layout(**_chart_base(
+                        height=200,
+                        title=dict(
+                            text=short,
+                            font=dict(color=pc, size=11,
+                                      family="Inter, Arial, sans-serif"),
+                            x=0.5, xanchor="center",
+                            y=0.97, yanchor="top",
+                        ),
+                        showlegend=False,
+                        margin=dict(t=32, b=10, l=10, r=10),
+                    ))
+                    st.plotly_chart(fig_d, use_container_width=True)
+
+    st.divider()
+
     # Pillar color key
     st.markdown("##### Pillar Key")
     key_html = "<div style='display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px'>"
@@ -2532,7 +2759,7 @@ def view_content_kpis():
     st.markdown("##### Projects")
     fa, fb, fc, fd = st.columns(4)
     f_pillar = fa.selectbox("Filter: Pillar",  ["All"] + all_pillars,      key="cp_f_pillar")
-    f_status = fb.selectbox("Filter: Status",  ["All"] + PROJECT_STATUSES, key="cp_f_status")
+    f_status = fb.selectbox("Filter: Priority",  ["All"] + PROJECT_STATUSES, key="cp_f_status")
     f_owner  = fc.selectbox("Filter: Owner",   ["All"] + RTL_OWNERS,       key="cp_f_owner")
     sort_by  = fd.selectbox(
         "Sort by",
@@ -2548,22 +2775,11 @@ def view_content_kpis():
 
     visible = projects[mask].copy()
 
-    # Compute % complete for sorting (respects manual override)
-    def _row_pct(row):
-        try:
-            ov = int(float(row.get("pct_override", 0) or 0))
-        except (ValueError, TypeError):
-            ov = 0
-        if ov > 0:
-            return ov
-        total, _, _, _ = _content_progress(row)
-        return total
-
     if sort_by == "% Complete (high–low)":
-        visible["_pct"] = visible.apply(_row_pct, axis=1)
+        visible["_pct"] = visible.apply(_compute_project_pct, axis=1)
         visible = visible.sort_values("_pct", ascending=False)
     elif sort_by == "% Complete (low–high)":
-        visible["_pct"] = visible.apply(_row_pct, axis=1)
+        visible["_pct"] = visible.apply(_compute_project_pct, axis=1)
         visible = visible.sort_values("_pct", ascending=True)
     elif sort_by in ("Go-live (soonest)", "Go-live (latest)"):
         visible["_go_live_sort"] = pd.to_datetime(
