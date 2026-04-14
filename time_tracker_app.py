@@ -83,6 +83,13 @@ div[data-testid="stMetric"] {
     margin-top: 14px;
     margin-bottom: 4px;
 }
+
+/* Primary buttons: dark text on #B4E817 lime-green background for legibility */
+button[kind="primary"],
+div[data-testid="stButton"] > button[kind="primary"],
+div[data-testid="stFormSubmitButton"] > button[kind="primary"] {
+    color: #171717 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -161,6 +168,80 @@ STATUS_COLORS = {
     "Verbal":     "#FF9F18",   # CVU_PALETTE[1]
     "Pipeline":   "#4F4F4F",   # CVU_BORDER (muted)
 }
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CONTENT KPI CONSTANTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+CONTENT_FILE = "content_projects.xlsx"
+
+CONTENT_TYPES = ["Book", "White paper", "Data study", "Magazine", "PDF report"]
+
+DEFAULT_PILLARS = [
+    "Program Partnership",
+    "Committee-Driven",
+    "Commissioned Research",
+    "Conference Sponsorship",
+    "Advertising and Sales-Driven",
+    "Other Sponsorship",
+]
+
+PILLAR_COLORS = {
+    "Program Partnership":          "#516BFF",
+    "Committee-Driven":             "#C63AD2",
+    "Commissioned Research":        "#FF9F18",
+    "Conference Sponsorship":       "#54D9E7",
+    "Advertising and Sales-Driven": "#FA3F26",
+    "Other Sponsorship":            "#34C684",
+}
+
+DEFAULT_PILLAR_COLOR = "#9E9E9E"  # fallback for any custom pillars added by user
+
+CONTENT_ACCT_CODES = {
+    "904a": "City Advocacy",
+    "905a": "Sustainability Program",
+    "906a": "T+U Innovation",
+    "910":  "Climateworks Code Research",
+    "916":  "Commissioned Research",
+    "701":  "Vertical Urbanism Magazine",
+    "702":  "Tall + Urban Awards Book",
+    "703":  "Conference Publications, Proceedings & Reports",
+    "704":  "Research Reports",
+    "705":  "Technical Guides",
+    "710":  "Other Publications / Data Handbook",
+}
+
+RTL_OWNERS         = ["DS", "IW", "RD", "SU", "WM"]
+SPONSORSHIP_TYPES  = ["Program Partnership", "Commissioned Research", "VU Advert", "Other"]
+PROJECT_STATUSES   = [
+    "Obligatory sponsor deliverable",
+    "Internal commitment",
+    "Internal idea",
+    "Project completed",
+]
+FORMAT_TYPES       = ["Digital", "Print", "Both", "TBD"]
+CONTENT_GENERATORS = [
+    "RTL",
+    "Client + RTL",
+    "Other CVU Team",
+    "Conference Speakers",
+    "Committee",
+    "External Contributors",
+]
+FUNDING_SOURCES    = ["Conference Sponsor", "Program Partner", "Commissioned Research", "Sales", "None"]
+
+# Column order for the projects sheet — do not reorder without a migration
+PROJECTS_COLS = [
+    "id", "title", "type", "pillar", "acct_code", "owner",
+    "sponsored", "sponsorship_type", "sponsorship_other",
+    "status", "format", "content_generator", "committee_name",
+    "funding_source", "program_partner_name",
+    "budget", "est_hours",
+    "draft_delivered", "draft_commented", "draft_completed",
+    "layout1_delivered", "layout1_commented", "layout2_delivered", "layout2_approved",
+    "print_date", "go_live_date",
+    "notes", "pct_override", "confirmed_pending",
+]
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GITHUB / CLOUD HELPERS
@@ -357,6 +438,165 @@ def save_finances(txns: pd.DataFrame, settings: dict, custom_codes: dict) -> tup
         ok, msg = True, "Saved."
 
     load_finances.clear()
+    return ok, msg
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CONTENT PROJECTS DATA — load / save
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _empty_projects() -> pd.DataFrame:
+    return pd.DataFrame(columns=PROJECTS_COLS)
+
+
+def _fetch_content_bytes():
+    """Return raw bytes of content_projects.xlsx from GitHub (cloud) or disk (local)."""
+    if _is_cloud():
+        url = (
+            f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}"
+            f"/contents/{CONTENT_FILE}?ref={GITHUB_BRANCH}"
+        )
+        resp = requests.get(url, headers={
+            "Authorization": f"token {_github_token()}",
+            "Accept":        "application/vnd.github.v3+json",
+        })
+        if resp.status_code == 404:
+            return None
+        if resp.status_code != 200:
+            raise RuntimeError(f"GitHub error fetching content projects: {resp.status_code}")
+        return base64.b64decode(resp.json()["content"].replace("\n", ""))
+    else:
+        local = DATA_DIR / CONTENT_FILE
+        if not local.exists():
+            return None
+        return local.read_bytes()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_content_projects():
+    """
+    Returns (projects_df, settings_dict, all_pillars_list, all_codes_dict).
+    Creates empty structures if the file doesn't exist yet.
+    """
+    raw = _fetch_content_bytes()
+    if raw is None:
+        return _empty_projects(), {}, list(DEFAULT_PILLARS), dict(CONTENT_ACCT_CODES)
+
+    wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
+
+    # --- projects sheet ---
+    records = []
+    if "projects" in wb.sheetnames:
+        ws = wb["projects"]
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row[0] is None:
+                continue
+            records.append(dict(zip(PROJECTS_COLS, row)))
+
+    projects = (pd.DataFrame(records, columns=PROJECTS_COLS)
+                if records else _empty_projects())
+    if not projects.empty:
+        for col in ("budget", "est_hours"):
+            projects[col] = pd.to_numeric(projects[col], errors="coerce").fillna(0.0)
+
+    # --- settings sheet ---
+    settings       = {}
+    custom_pillars = []
+    custom_codes   = {}
+    if "settings" in wb.sheetnames:
+        ws = wb["settings"]
+        for row in ws.iter_rows(min_row=1, values_only=True):
+            if row[0] is None:
+                continue
+            key = str(row[0])
+            val = row[1]
+            if key.startswith("custom_pillar_"):
+                if val:
+                    custom_pillars.append(str(val))
+            elif key.startswith("custom_content_code_"):
+                code = key[len("custom_content_code_"):]
+                custom_codes[code] = str(val) if val else code
+            else:
+                try:
+                    settings[key] = float(val) if val is not None else 0.0
+                except (TypeError, ValueError):
+                    settings[key] = val
+
+    all_pillars = list(DEFAULT_PILLARS) + [p for p in custom_pillars
+                                           if p not in DEFAULT_PILLARS]
+    all_codes   = dict(CONTENT_ACCT_CODES)
+    all_codes.update(custom_codes)
+
+    return projects, settings, all_pillars, all_codes
+
+
+def save_content_projects(
+    projects: pd.DataFrame,
+    settings: dict,
+    custom_pillars: list,
+    custom_codes: dict,
+) -> tuple:
+    """Persist projects + settings to content_projects.xlsx and commit to GitHub."""
+    wb   = openpyxl.Workbook()
+    ws_p = wb.active
+    ws_p.title = "projects"
+    ws_p.append(PROJECTS_COLS)
+
+    for _, row in projects.iterrows():
+        ws_p.append([
+            int(row.get("id", 0)),
+            str(row.get("title",               "") or ""),
+            str(row.get("type",                "") or ""),
+            str(row.get("pillar",              "") or ""),
+            str(row.get("acct_code",           "") or ""),
+            str(row.get("owner",               "") or ""),
+            str(row.get("sponsored",           "No")),
+            str(row.get("sponsorship_type",    "") or ""),
+            str(row.get("sponsorship_other",   "") or ""),
+            str(row.get("status",              "") or ""),
+            str(row.get("format",              "") or ""),
+            str(row.get("content_generator",   "") or ""),
+            str(row.get("committee_name",      "") or ""),
+            str(row.get("funding_source",      "") or ""),
+            str(row.get("program_partner_name","") or ""),
+            float(row.get("budget",     0.0) or 0.0),
+            float(row.get("est_hours",  0.0) or 0.0),
+            str(row.get("draft_delivered",    "") or ""),
+            str(row.get("draft_commented",    "") or ""),
+            str(row.get("draft_completed",    "") or ""),
+            str(row.get("layout1_delivered",  "") or ""),
+            str(row.get("layout1_commented",  "") or ""),
+            str(row.get("layout2_delivered",  "") or ""),
+            str(row.get("layout2_approved",   "") or ""),
+            str(row.get("print_date",         "") or ""),
+            str(row.get("go_live_date",       "") or ""),
+            str(row.get("notes",              "") or ""),
+            float(row.get("pct_override", 0.0) or 0.0),
+            str(row.get("confirmed_pending", "Confirmed") or "Confirmed"),
+        ])
+
+    ws_s = wb.create_sheet("settings")
+    for key, val in settings.items():
+        ws_s.append([key, val])
+    for i, pillar in enumerate(custom_pillars):
+        ws_s.append([f"custom_pillar_{i}", pillar])
+    for code, name in custom_codes.items():
+        ws_s.append([f"custom_content_code_{code}", name])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    content_bytes = buf.getvalue()
+
+    local_path = DATA_DIR / CONTENT_FILE
+    if _is_cloud():
+        ok, msg = _github_commit(CONTENT_FILE, content_bytes)
+        if ok:
+            local_path.write_bytes(content_bytes)
+    else:
+        local_path.write_bytes(content_bytes)
+        ok, msg = True, "Saved."
+
+    load_content_projects.clear()
     return ok, msg
 
 
@@ -1771,6 +2011,885 @@ def view_financial_kpis():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# VIEW: CONTENT KPIs (admin only)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _content_progress(row):
+    """
+    Returns (total_pct, p1_fill_pct, p2_fill_pct, p3_fill_pct).
+    Phase weights: Draft=30%, Layout=60%, Production=10%.
+    Fill pcts are 0–100 within each phase segment (for the progress bar).
+    """
+    fmt = str(row.get("format", "TBD"))
+
+    def filled(key):
+        """A milestone counts only if a date is recorded AND that date has passed."""
+        v = row.get(key, "")
+        if not v or str(v) in ("", "None", "NaT", "nan"):
+            return False
+        try:
+            return date.fromisoformat(str(v)[:10]) <= date.today()
+        except (ValueError, TypeError):
+            return False
+
+    # Phase 1 — Draft (30% of total)
+    p1_done  = sum(filled(k) for k in ("draft_delivered", "draft_commented", "draft_completed"))
+    p1_fill  = round((p1_done / 3) * 100)
+    p1_total = (p1_done / 3) * 30
+
+    # Phase 2 — Layout (60% of total)
+    p2_done  = sum(filled(k) for k in (
+        "layout1_delivered", "layout1_commented",
+        "layout2_delivered", "layout2_approved",
+    ))
+    p2_fill  = round((p2_done / 4) * 100)
+    p2_total = (p2_done / 4) * 60
+
+    # Phase 3 — Production (10% of total)
+    # Digital-only: only go-live counts (10%)
+    # Print-only:   only print date counts (10%)
+    # Both/TBD:     print date = 5%, go-live = 5%
+    if fmt == "Digital":
+        go       = filled("go_live_date")
+        p3_fill  = 100 if go else 0
+        p3_total = 10.0 if go else 0.0
+    elif fmt == "Print":
+        pr       = filled("print_date")
+        p3_fill  = 100 if pr else 0
+        p3_total = 10.0 if pr else 0.0
+    else:
+        pr       = filled("print_date")
+        go       = filled("go_live_date")
+        p3_fill  = round(((pr + go) / 2) * 100)
+        p3_total = (pr + go) * 5.0
+
+    total = round(p1_total + p2_total + p3_total)
+    return total, p1_fill, p2_fill, p3_fill
+
+
+def _progress_from_override(pct: int):
+    """
+    Map a manual 0–100 override to (total, p1_fill, p2_fill, p3_fill).
+    Fills the three phase segments sequentially (Draft→Layout→Prod)
+    so the bar reads left-to-right like real progress.
+    """
+    pct = max(0, min(100, int(pct)))
+    if pct <= 30:
+        p1 = round(pct / 30 * 100)
+        p2, p3 = 0, 0
+    elif pct <= 90:
+        p1 = 100
+        p2 = round((pct - 30) / 60 * 100)
+        p3 = 0
+    else:
+        p1, p2 = 100, 100
+        p3 = round((pct - 90) / 10 * 100)
+    return pct, p1, p2, p3
+
+
+def _compute_project_pct(row) -> int:
+    """Return the effective % complete for a project row (override takes priority)."""
+    try:
+        ov = int(float(row.get("pct_override", 0) or 0))
+    except (ValueError, TypeError):
+        ov = 0
+    if ov > 0:
+        return ov
+    total, _, _, _ = _content_progress(row)
+    return total
+
+
+def _next_milestone(proj: dict):
+    """
+    Return (date_str, display_name) for the earliest future milestone,
+    or None if no upcoming dates are set.
+    Respects format: print_date excluded for Digital, go_live_date excluded for Print.
+    """
+    fmt = str(proj.get("format", "TBD"))
+    candidates = [
+        ("draft_delivered",   "Draft delivered"),
+        ("draft_commented",   "Draft commented"),
+        ("draft_completed",   "Draft completed"),
+        ("layout1_delivered", "Layout 1 delivered"),
+        ("layout1_commented", "Layout 1 commented"),
+        ("layout2_delivered", "Layout 2 delivered"),
+        ("layout2_approved",  "Layout 2 approved"),
+    ]
+    if fmt != "Digital":
+        candidates.append(("print_date",  "Sent to printer"))
+    if fmt != "Print":
+        candidates.append(("go_live_date", "Go-live"))
+
+    today = date.today()
+    upcoming = []
+    for key, label in candidates:
+        v = proj.get(key, "")
+        if not v or str(v) in ("", "None", "NaT", "nan"):
+            continue
+        try:
+            d = date.fromisoformat(str(v)[:10])
+            if d > today:
+                upcoming.append((d, label))
+        except (ValueError, TypeError):
+            continue
+
+    if not upcoming:
+        return None
+    upcoming.sort(key=lambda x: x[0])
+    d, label = upcoming[0]
+    return d.isoformat(), label
+
+
+def _pillar_color(pillar: str) -> str:
+    return PILLAR_COLORS.get(pillar, DEFAULT_PILLAR_COLOR)
+
+
+def _project_card_html(proj: dict, pillar_color: str) -> str:
+    """Render one project as a dark card with a pillar-colored progress bar."""
+    # Use manual override if set, otherwise auto-calculate from milestone dates
+    override_raw = proj.get("pct_override", 0)
+    try:
+        override = int(float(override_raw)) if override_raw else 0
+    except (ValueError, TypeError):
+        override = 0
+
+    if override > 0:
+        total, p1, p2, p3 = _progress_from_override(override)
+        manual_label = (
+            "<span style='font-size:0.65rem;color:#9E9E9E;font-weight:400'>"
+            " (manual)</span>"
+        )
+    else:
+        total, p1, p2, p3 = _content_progress(proj)
+        manual_label = ""
+
+    title      = proj.get("title",            "Untitled")
+    status     = proj.get("status",           "")
+    conf_pend  = proj.get("confirmed_pending","Confirmed") or "Confirmed"
+    pillar     = proj.get("pillar",           "")
+    fmt        = proj.get("format",           "")
+    owner      = proj.get("owner",            "")
+    ptype      = proj.get("type",             "")
+    acct       = proj.get("acct_code",        "")
+    budget     = proj.get("budget",    0.0) or 0.0
+    hours      = proj.get("est_hours", 0.0) or 0.0
+
+    budget_str  = f"${float(budget):,.0f}" if budget else "—"
+    hours_str   = f"{float(hours):,.0f} hrs" if hours else "—"
+    is_pending  = (conf_pend == "Pending")
+    italic_style = "font-style:italic;" if is_pending else ""
+    status_line  = f"{conf_pend}, {status}" if status else conf_pend
+
+    next_ms = _next_milestone(proj)
+    if next_ms:
+        next_date, next_name = next_ms
+        next_html = (
+            f"<span style='font-size:0.72rem;font-weight:400;"
+            f"color:#9E9E9E;margin-left:10px;font-style:normal'>"
+            f"Next: {next_date}, {next_name}</span>"
+        )
+    else:
+        next_html = ""
+
+    return f"""
+<div style="background:#282828;border-radius:8px;padding:18px 20px 14px;
+            border-left:4px solid {pillar_color};margin-bottom:4px;{italic_style}">
+
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px">
+    <span style="font-size:1.05rem;font-weight:700;color:#FCFCFC;
+                 line-height:1.3;flex:1;margin-right:8px">{title}</span>
+    <span style="background:{pillar_color}22;color:{pillar_color};
+                 border:1px solid {pillar_color}55;border-radius:10px;
+                 font-size:0.68rem;font-weight:600;padding:2px 8px;
+                 white-space:nowrap;flex-shrink:0;font-style:normal">{pillar}</span>
+  </div>
+
+  <div style="font-size:0.82rem;color:#C5C5C5;margin-bottom:6px">{status_line}</div>
+  <div style="font-size:0.9rem;font-weight:700;color:#B4E817;margin-bottom:10px">
+    {total}% complete{manual_label}{next_html}
+  </div>
+
+  <!-- Progress bar: 3 phase segments (widths 30% / 60% / 10%) -->
+  <div style="display:flex;gap:3px;height:9px;margin-bottom:4px">
+    <div style="flex:30;background:#3A3A3A;border-radius:2px;overflow:hidden">
+      <div style="height:100%;width:{p1}%;background:{pillar_color};transition:width .3s"></div>
+    </div>
+    <div style="flex:60;background:#3A3A3A;border-radius:2px;overflow:hidden">
+      <div style="height:100%;width:{p2}%;background:{pillar_color};transition:width .3s"></div>
+    </div>
+    <div style="flex:10;background:#3A3A3A;border-radius:2px;overflow:hidden">
+      <div style="height:100%;width:{p3}%;background:{pillar_color};transition:width .3s"></div>
+    </div>
+  </div>
+  <div style="display:flex;gap:3px;margin-bottom:12px">
+    <div style="flex:30;font-size:0.65rem;color:#9E9E9E">Draft</div>
+    <div style="flex:60;font-size:0.65rem;color:#9E9E9E">Layout</div>
+    <div style="flex:10;font-size:0.65rem;color:#9E9E9E;text-align:right">Prod</div>
+  </div>
+
+  <!-- Meta row -->
+  <div style="display:flex;flex-wrap:wrap;gap:12px;font-size:0.78rem;color:#9E9E9E">
+    <span><span style="color:#FCFCFC;font-weight:600">{ptype}</span></span>
+    <span>Owner: <span style="color:#FCFCFC;font-weight:600">{owner}</span></span>
+    <span>Format: <span style="color:#FCFCFC;font-weight:600">{fmt}</span></span>
+    <span>Code: <span style="color:#FCFCFC;font-weight:600">{acct}</span></span>
+    <span>Budget: <span style="color:#FCFCFC;font-weight:600">{budget_str}</span></span>
+    <span>Est. RTL Hours: <span style="color:#FCFCFC;font-weight:600">{hours_str}</span></span>
+  </div>
+</div>
+"""
+
+
+def _idx(lst: list, val, default: int = 0) -> int:
+    """Return index of val in lst, or default if not found."""
+    try:
+        return lst.index(str(val)) if val else default
+    except ValueError:
+        return default
+
+
+def view_content_kpis():
+    c_colors = _chart_colors()
+    projects, settings, all_pillars, all_codes = load_content_projects()
+
+    # Hourly rate: auto-derive from Financial KPIs annual staff cost if available.
+    # Cache in session_state so load_finances() only fires once per session,
+    # not on every widget interaction (which causes page jumps).
+    if "cp_auto_rate" not in st.session_state:
+        try:
+            _, fin_settings, _ = load_finances()
+            ann_cost = float(fin_settings.get("annual_staff_cost", 0.0))
+            st.session_state["cp_auto_rate"] = (
+                round(ann_cost * 0.00012019, 2) if ann_cost > 0 else 0.0
+            )
+        except Exception:
+            st.session_state["cp_auto_rate"] = 0.0
+    auto_rate = st.session_state["cp_auto_rate"]
+
+    stored_rate  = float(settings.get("rtl_hourly_rate", 0.0))
+    default_rate = stored_rate if stored_rate > 0 else (auto_rate if auto_rate > 0 else 91.03)
+
+    # ── Add / Edit Project Form ───────────────────────────────────────────────
+    edit_id = st.session_state.get("cp_edit_id", None)
+    edit_proj = {}
+    if edit_id is not None and not projects.empty:
+        matches = projects[projects["id"] == edit_id]
+        if not matches.empty:
+            edit_proj = matches.iloc[0].to_dict()
+
+    form_label = f"Edit Project — {edit_proj.get('title', '')}" if edit_id else "Add New Project"
+    with st.expander(form_label, expanded=(edit_id is not None or projects.empty)):
+
+        # Row 1: Title | Type | Pillar
+        f1, f2, f3 = st.columns([3, 2, 2])
+        cp_title  = f1.text_input("Title", key="cp_title",
+                                  value=str(edit_proj.get("title", "") or ""))
+        cp_type   = f2.selectbox("Type", CONTENT_TYPES, key="cp_type",
+                                 index=_idx(CONTENT_TYPES, edit_proj.get("type")))
+        cp_pillar = f3.selectbox("Pillar", all_pillars, key="cp_pillar",
+                                 index=_idx(all_pillars, edit_proj.get("pillar")))
+
+        # Row 2: Accounting Code | Owner | Sponsored
+        code_options = [f"{k} — {v}" for k, v in all_codes.items()]
+        g1, g2, g3  = st.columns([3, 2, 2])
+        cp_code_raw  = g1.selectbox("Accounting Code", code_options, key="cp_code",
+                                    index=_idx(code_options,
+                                               next((f"{k} — {v}" for k, v in all_codes.items()
+                                                     if k == edit_proj.get("acct_code")), None)))
+        cp_owner     = g2.selectbox("RTL Owner", RTL_OWNERS, key="cp_owner",
+                                    index=_idx(RTL_OWNERS, edit_proj.get("owner")))
+        cp_sponsored = g3.selectbox("Sponsored?", ["No", "Yes"], key="cp_sponsored",
+                                    index=_idx(["No", "Yes"], edit_proj.get("sponsored", "No")))
+
+        # Row 3 (conditional): Sponsorship Type
+        cp_sponsorship_type  = ""
+        cp_sponsorship_other = ""
+        if cp_sponsored == "Yes":
+            sp1, sp2 = st.columns(2)
+            cp_sponsorship_type = sp1.selectbox(
+                "Sponsorship Type", SPONSORSHIP_TYPES, key="cp_spons_type",
+                index=_idx(SPONSORSHIP_TYPES, edit_proj.get("sponsorship_type")),
+            )
+            if cp_sponsorship_type == "Other":
+                cp_sponsorship_other = sp2.text_input(
+                    "Specify sponsorship type", key="cp_spons_other",
+                    value=str(edit_proj.get("sponsorship_other", "") or ""),
+                )
+
+        # Row 4: Confirmed/Pending | Status | Format | Content Generator
+        h0, h1, h2, h3 = st.columns(4)
+        cp_conf_pend = h0.selectbox(
+            "Confirmed/Pending",
+            ["Confirmed", "Pending"],
+            key="cp_conf_pend",
+            index=_idx(["Confirmed", "Pending"],
+                       edit_proj.get("confirmed_pending", "Confirmed")),
+        )
+        cp_status    = h1.selectbox("Priority", PROJECT_STATUSES, key="cp_status",
+                                    index=_idx(PROJECT_STATUSES, edit_proj.get("status")))
+        cp_format    = h2.selectbox("Format", FORMAT_TYPES, key="cp_format",
+                                    index=_idx(FORMAT_TYPES, edit_proj.get("format")))
+        cp_generator = h3.selectbox("Content Generator", CONTENT_GENERATORS,
+                                    key="cp_generator",
+                                    index=_idx(CONTENT_GENERATORS,
+                                               edit_proj.get("content_generator")))
+
+        # Row 5 (conditional): Committee name + Funding Source + Program Partner name
+        cp_committee     = ""
+        cp_funding       = FUNDING_SOURCES[0]
+        cp_partner_name  = ""
+        fu1, fu2 = st.columns(2)
+        if cp_generator == "Committee":
+            cp_committee = fu1.text_input(
+                "Committee name", key="cp_committee",
+                value=str(edit_proj.get("committee_name", "") or ""),
+            )
+        cp_funding = fu2.selectbox("Funding Source", FUNDING_SOURCES,
+                                   key="cp_funding",
+                                   index=_idx(FUNDING_SOURCES, edit_proj.get("funding_source")))
+        if cp_funding == "Program Partner":
+            cp_partner_name = st.text_input(
+                "Program partner name", key="cp_partner_name",
+                value=str(edit_proj.get("program_partner_name", "") or ""),
+            )
+
+        # Row 6: Budget + Estimated Hours
+        b1, b2 = st.columns(2)
+        cp_budget = b1.number_input(
+            "2026 Budget ($)", min_value=0.0, step=500.0, format="%.2f",
+            value=float(edit_proj.get("budget", 0.0) or 0.0),
+            key="cp_budget",
+        )
+        cp_hours = b2.number_input(
+            "Est. RTL Hours", min_value=0.0, step=1.0, format="%.1f",
+            value=float(edit_proj.get("est_hours", 0.0) or 0.0),
+            key="cp_hours",
+        )
+
+        # Show computed RTL labor cost estimate
+        rate = float(settings.get("rtl_hourly_rate", default_rate))
+        if cp_hours > 0 and rate > 0:
+            labor_cost = cp_hours * rate
+            st.caption(f"Estimated RTL labor cost: **${labor_cost:,.0f}** "
+                       f"({cp_hours:.0f} hrs × ${rate:.2f}/hr)")
+
+        # ── Schedule ──────────────────────────────────────────────────────────
+        st.markdown(
+            "<p style='color:#9E9E9E;font-size:0.85rem;margin-top:10px'>"
+            "Schedule — enter dates as you reach each milestone "
+            "(leave blank until completed)</p>",
+            unsafe_allow_html=True,
+        )
+
+        def _date_val(key):
+            raw = edit_proj.get(key, "")
+            if not raw or str(raw) in ("", "None", "NaT", "nan"):
+                return None
+            try:
+                return date.fromisoformat(str(raw)[:10])
+            except Exception:
+                return None
+
+        st.markdown("**Phase 1 — Draft**")
+        d1, d2, d3 = st.columns(3)
+        cp_draft_del = d1.date_input("Draft delivered",    value=_date_val("draft_delivered"),
+                                     key="cp_draft_del")
+        cp_draft_com = d2.date_input("Draft commented",    value=_date_val("draft_commented"),
+                                     key="cp_draft_com")
+        cp_draft_cpd = d3.date_input("Draft completed",    value=_date_val("draft_completed"),
+                                     key="cp_draft_cpd")
+
+        st.markdown("**Phase 2 — Layout**")
+        l1, l2, l3, l4 = st.columns(4)
+        cp_lay1_del = l1.date_input("Layout 1 delivered", value=_date_val("layout1_delivered"),
+                                    key="cp_lay1_del")
+        cp_lay1_com = l2.date_input("Layout 1 commented", value=_date_val("layout1_commented"),
+                                    key="cp_lay1_com")
+        cp_lay2_del = l3.date_input("Layout 2 delivered", value=_date_val("layout2_delivered"),
+                                    key="cp_lay2_del")
+        cp_lay2_apr = l4.date_input("Layout 2 approved",  value=_date_val("layout2_approved"),
+                                    key="cp_lay2_apr")
+
+        st.markdown("**Phase 3 — Production**")
+        p1c, p2c = st.columns(2)
+        show_print = cp_format in ("Print", "Both", "TBD")
+        show_live  = cp_format in ("Digital", "Both", "TBD")
+        cp_print_date = (
+            p1c.date_input("Print date",   value=_date_val("print_date"),    key="cp_print")
+            if show_print else None
+        )
+        cp_go_live = (
+            p2c.date_input("Go-live date", value=_date_val("go_live_date"),  key="cp_golive")
+            if show_live else None
+        )
+
+        # Notes
+        cp_notes = st.text_area("Notes (optional)", key="cp_notes",
+                                value=str(edit_proj.get("notes", "") or ""),
+                                height=80)
+
+        # Manual completion override
+        st.markdown(
+            "<p style='color:#9E9E9E;font-size:0.85rem;margin-top:4px'>"
+            "Completion % override — set this if the auto-calculated value "
+            "(based on milestone dates) isn't accurate. Set to 0 to go back "
+            "to auto-calculate.</p>",
+            unsafe_allow_html=True,
+        )
+        ov1, ov2 = st.columns([1, 3])
+        cp_pct_override = ov1.number_input(
+            "% Complete Override",
+            min_value=0, max_value=100, step=1,
+            value=int(float(edit_proj.get("pct_override", 0) or 0)),
+            key="cp_pct_override",
+            label_visibility="collapsed",
+        )
+        if cp_pct_override > 0:
+            ov2.info(
+                f"Cards will show **{cp_pct_override}%** instead of the "
+                f"auto-calculated value."
+            )
+        else:
+            ov2.caption("Currently auto-calculating from milestone dates.")
+
+        def _fmt_date(d):
+            return d.isoformat() if d else ""
+
+        # ── Save / Cancel buttons ─────────────────────────────────────────────
+        btn_col1, btn_col2 = st.columns([2, 1])
+        save_label = "Update Project" if edit_id else "Add Project"
+        if btn_col1.button(save_label, type="primary", use_container_width=True):
+            if not cp_title.strip():
+                st.error("Project title is required.")
+            else:
+                cp_code = cp_code_raw.split(" — ")[0].strip() if cp_code_raw else ""
+                new_row = {
+                    "id":                   edit_id if edit_id else (
+                        int(projects["id"].max() + 1)
+                        if not projects.empty and projects["id"].notna().any() else 1
+                    ),
+                    "title":                cp_title.strip(),
+                    "type":                 cp_type,
+                    "pillar":               cp_pillar,
+                    "acct_code":            cp_code,
+                    "owner":                cp_owner,
+                    "sponsored":            cp_sponsored,
+                    "sponsorship_type":     cp_sponsorship_type,
+                    "sponsorship_other":    cp_sponsorship_other,
+                    "status":               cp_status,
+                    "format":               cp_format,
+                    "content_generator":    cp_generator,
+                    "committee_name":       cp_committee,
+                    "funding_source":       cp_funding,
+                    "program_partner_name": cp_partner_name,
+                    "budget":               cp_budget,
+                    "est_hours":            cp_hours,
+                    "draft_delivered":      _fmt_date(cp_draft_del),
+                    "draft_commented":      _fmt_date(cp_draft_com),
+                    "draft_completed":      _fmt_date(cp_draft_cpd),
+                    "layout1_delivered":    _fmt_date(cp_lay1_del),
+                    "layout1_commented":    _fmt_date(cp_lay1_com),
+                    "layout2_delivered":    _fmt_date(cp_lay2_del),
+                    "layout2_approved":     _fmt_date(cp_lay2_apr),
+                    "print_date":           _fmt_date(cp_print_date) if cp_print_date else "",
+                    "go_live_date":         _fmt_date(cp_go_live)    if cp_go_live    else "",
+                    "notes":                cp_notes,
+                    "pct_override":         cp_pct_override,
+                    "confirmed_pending":    cp_conf_pend,
+                }
+                new_df = pd.DataFrame([new_row])
+                if edit_id:
+                    updated = projects[projects["id"] != edit_id]
+                    updated = pd.concat([updated, new_df], ignore_index=True)
+                else:
+                    updated = pd.concat([projects, new_df], ignore_index=True)
+
+                custom_pillars = [p for p in all_pillars if p not in DEFAULT_PILLARS]
+                extra_codes    = {k: v for k, v in all_codes.items() if k not in CONTENT_ACCT_CODES}
+                ok, msg = save_content_projects(
+                    updated,
+                    {"rtl_hourly_rate": rate},
+                    custom_pillars,
+                    extra_codes,
+                )
+                if ok:
+                    st.session_state.pop("cp_edit_id", None)
+                    st.toast("Project saved.")
+                    st.rerun()
+                else:
+                    st.error(msg)
+
+        if edit_id and btn_col2.button("Cancel Edit", use_container_width=True):
+            st.session_state.pop("cp_edit_id", None)
+            st.rerun()
+
+    # ── Dashboard ─────────────────────────────────────────────────────────────
+    if projects.empty:
+        st.info("No projects yet — use the form above to add your first project.")
+        return
+
+    # ── Key Metrics ───────────────────────────────────────────────────────────
+    st.markdown("##### Key Metrics")
+
+    # Confirmed-only subset (handle projects saved before confirmed_pending existed)
+    def _is_confirmed(row):
+        return str(row.get("confirmed_pending", "Confirmed") or "Confirmed") == "Confirmed"
+
+    confirmed = projects[projects.apply(_is_confirmed, axis=1)]
+    conf_pcts  = (confirmed.apply(_compute_project_pct, axis=1)
+                  if not confirmed.empty else pd.Series(dtype=float))
+    avg_pct    = round(conf_pcts.mean()) if not conf_pcts.empty else 0
+
+    pillar_counts = projects["pillar"].value_counts()
+    active_pillars = [p for p in all_pillars if pillar_counts.get(p, 0) > 0]
+
+    km1, km2, km3 = st.columns(3)
+
+    with km1:
+        st.metric("Pieces of Content", len(projects))
+
+    with km2:
+        pillar_lines = "".join(
+            f"<div style='margin:3px 0;font-size:0.8rem'>"
+            f"<span style='color:{_pillar_color(p)}'>\u25cf</span>"
+            f" <span style='color:#FCFCFC'>{p}</span>"
+            f"<span style='color:#9E9E9E'>: {int(pillar_counts.get(p, 0))}</span>"
+            f"</div>"
+            for p in active_pillars
+        )
+        st.markdown(
+            "<div style='background:#282828;border-radius:6px;padding:12px 16px;"
+            "border-left:3px solid #B4E817'>"
+            "<div style='font-size:0.85rem;color:#FCFCFC;margin-bottom:6px'>"
+            "Content by Pillar</div>"
+            f"{pillar_lines}"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+    with km3:
+        st.metric("Avg % Complete", f"{avg_pct}%",
+                  help="Confirmed projects only")
+
+    st.divider()
+
+    # ── Go-Live Timeline ──────────────────────────────────────────────────────
+    st.markdown("##### Go-Live Timeline")
+    tl_key_html = "<div style='display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px'>"
+    for pillar in all_pillars:
+        col = _pillar_color(pillar)
+        tl_key_html += (
+            f"<span style='background:{col}22;color:{col};"
+            f"border:1px solid {col}55;border-radius:10px;"
+            f"font-size:0.75rem;font-weight:600;padding:3px 10px'>{pillar}</span>"
+        )
+    tl_key_html += "</div>"
+    st.markdown(tl_key_html, unsafe_allow_html=True)
+
+    year = date.today().year
+
+    def _parse_gl(v):
+        if not v or str(v) in ("", "None", "NaT", "nan"):
+            return None
+        try:
+            return date.fromisoformat(str(v)[:10])
+        except (ValueError, TypeError):
+            return None
+
+    tl = projects.copy()
+    tl["_gl"] = tl["go_live_date"].apply(_parse_gl)
+    tl = tl[tl["_gl"].apply(lambda d: d is not None and d.year == year)]
+
+    if tl.empty:
+        st.caption("No go-live dates in the current year to display.")
+    else:
+        year_start  = date(year, 1, 1)
+        tl["_week"] = tl["_gl"].apply(lambda d: (d - year_start).days // 7)
+        tl_pillars  = [p for p in all_pillars if p in tl["pillar"].values]
+
+        # Max items stacked per (pillar, week) — used for dynamic row height
+        stacks_df  = (tl.groupby(["pillar", "_week"]).size()
+                        .reset_index(name="cnt"))
+        max_per_p  = stacks_df.groupby("pillar")["cnt"].max()
+
+        # Assign base Y for each pillar, expanding row height for stacks
+        y_bases = {}
+        cur_y   = 0.0
+        for p in tl_pillars:
+            y_bases[p] = cur_y
+            ms   = int(max_per_p.get(p, 1))
+            cur_y += max(1.0, ms * 0.45 + 0.3)
+
+        total_y = cur_y
+        chart_h = max(220, int(total_y * 65) + 80)
+
+        tl = tl.sort_values("_gl")
+        tl["_stack"] = tl.groupby(["pillar", "_week"]).cumcount()
+        tl["_y"]     = tl.apply(
+            lambda r: y_bases.get(str(r["pillar"]), 0) + r["_stack"] * 0.45,
+            axis=1,
+        )
+
+        fig_tl = go.Figure()
+        for pillar in tl_pillars:
+            pdf      = tl[tl["pillar"] == pillar]
+            pc       = _pillar_color(pillar)
+            pct_lbl  = pdf.apply(_compute_project_pct, axis=1).astype(str) + "% complete"
+            conf_lbl = pdf.apply(
+                lambda r: str(r.get("confirmed_pending", "Confirmed") or "Confirmed"),
+                axis=1,
+            ).tolist()
+            opacities = [0.5 if c == "Pending" else 1.0 for c in conf_lbl]
+            fig_tl.add_trace(go.Scatter(
+                x=pdf["_gl"].apply(lambda d: d.isoformat()),
+                y=pdf["_y"],
+                mode="markers",
+                name=pillar,
+                marker=dict(symbol="square", size=18, color=pc, opacity=opacities),
+                customdata=list(zip(pdf["title"].tolist(), pct_lbl.tolist(), conf_lbl)),
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>"
+                    "Go-live: %{x|%Y-%m-%d}<br>"
+                    "%{customdata[1]} · %{customdata[2]}<extra></extra>"
+                ),
+                showlegend=False,
+            ))
+
+        tick_vals = [y_bases[p] for p in tl_pillars]
+        tick_text = [
+            p.replace("Advertising and Sales-Driven", "Advert. & Sales-Driven")
+            for p in tl_pillars
+        ]
+
+        fig_tl.update_layout(**_chart_base(
+            height=chart_h,
+            xaxis=dict(
+                range=[f"{year}-01-01", f"{year}-12-31"],
+                tickformat="%b",
+                dtick="M1",
+                tickfont=dict(color=c_colors["subtext"], size=11,
+                              family="Inter, Arial, sans-serif"),
+                gridcolor=c_colors["grid"],
+                zerolinecolor=c_colors["grid"],
+                showgrid=True,
+            ),
+            yaxis=dict(
+                tickvals=tick_vals,
+                ticktext=tick_text,
+                tickfont=dict(color=c_colors["text"], size=11,
+                              family="Inter, Arial, sans-serif"),
+                showgrid=False,
+                range=[-0.4, total_y],
+                automargin=True,
+            ),
+            showlegend=False,
+            margin=dict(l=10, r=20, t=20, b=40),
+        ))
+
+        st.plotly_chart(fig_tl, use_container_width=True)
+
+    st.divider()
+
+    # ── % Complete by Pillar (Confirmed) ─────────────────────────────────────
+    st.markdown("##### % Complete by Pillar — Confirmed Projects")
+
+    pillar_avgs = {
+        p: round(confirmed[confirmed["pillar"] == p]
+                 .apply(_compute_project_pct, axis=1).mean())
+        for p in all_pillars
+        if not confirmed.empty and not confirmed[confirmed["pillar"] == p].empty
+    }
+
+    if not pillar_avgs:
+        st.caption("No confirmed projects yet.")
+    else:
+        donut_items = list(pillar_avgs.items())
+        for row_start in range(0, len(donut_items), 3):
+            d_cols = st.columns(3)
+            for ci, (pillar, avg) in enumerate(donut_items[row_start:row_start + 3]):
+                pc = _pillar_color(pillar)
+                with d_cols[ci]:
+                    fig_d = go.Figure(go.Pie(
+                        values=[avg, max(0, 100 - avg)],
+                        labels=["Complete", "Remaining"],
+                        hole=0.60,
+                        marker_colors=[pc, "#3A3A3A"],
+                        hoverinfo="skip",
+                        textinfo="none",
+                        sort=False,
+                    ))
+                    fig_d.add_annotation(
+                        text=f"<b>{avg}%</b>",
+                        x=0.5, y=0.5,
+                        font=dict(size=22, color=c_colors["text"],
+                                  family="Inter, Arial, sans-serif"),
+                        showarrow=False,
+                    )
+                    short = pillar if len(pillar) <= 24 else pillar[:22] + "\u2026"
+                    fig_d.update_layout(**_chart_base(
+                        height=200,
+                        title=dict(
+                            text=short,
+                            font=dict(color=pc, size=11,
+                                      family="Inter, Arial, sans-serif"),
+                            x=0.5, xanchor="center",
+                            y=0.97, yanchor="top",
+                        ),
+                        showlegend=False,
+                        margin=dict(t=32, b=10, l=10, r=10),
+                    ))
+                    st.plotly_chart(fig_d, use_container_width=True)
+
+    st.divider()
+
+    # Pillar color key
+    st.markdown("##### Pillar Key")
+    key_html = "<div style='display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px'>"
+    for pillar in all_pillars:
+        col = _pillar_color(pillar)
+        key_html += (
+            f"<span style='background:{col}22;color:{col};"
+            f"border:1px solid {col}55;border-radius:10px;"
+            f"font-size:0.75rem;font-weight:600;padding:3px 10px'>{pillar}</span>"
+        )
+    key_html += "</div>"
+    st.markdown(key_html, unsafe_allow_html=True)
+
+    # Filter + sort bar
+    st.markdown("##### Projects")
+    fa, fb, fc, fd = st.columns(4)
+    f_pillar = fa.selectbox("Filter: Pillar",  ["All"] + all_pillars,      key="cp_f_pillar")
+    f_status = fb.selectbox("Filter: Priority",  ["All"] + PROJECT_STATUSES, key="cp_f_status")
+    f_owner  = fc.selectbox("Filter: Owner",   ["All"] + RTL_OWNERS,       key="cp_f_owner")
+    sort_by  = fd.selectbox(
+        "Sort by",
+        ["Date added", "% Complete (high–low)", "% Complete (low–high)",
+         "Go-live (soonest)", "Go-live (latest)"],
+        key="cp_sort_by",
+    )
+
+    mask = pd.Series(True, index=projects.index)
+    if f_pillar != "All": mask &= projects["pillar"] == f_pillar
+    if f_status != "All": mask &= projects["status"] == f_status
+    if f_owner  != "All": mask &= projects["owner"]  == f_owner
+
+    visible = projects[mask].copy()
+
+    if sort_by == "% Complete (high–low)":
+        visible["_pct"] = visible.apply(_compute_project_pct, axis=1)
+        visible = visible.sort_values("_pct", ascending=False)
+    elif sort_by == "% Complete (low–high)":
+        visible["_pct"] = visible.apply(_compute_project_pct, axis=1)
+        visible = visible.sort_values("_pct", ascending=True)
+    elif sort_by in ("Go-live (soonest)", "Go-live (latest)"):
+        visible["_go_live_sort"] = pd.to_datetime(
+            visible["go_live_date"], errors="coerce"
+        )
+        visible = visible.sort_values(
+            "_go_live_sort",
+            ascending=(sort_by == "Go-live (soonest)"),
+            na_position="last",
+        )
+
+    visible = visible.reset_index(drop=True)
+    if visible.empty:
+        st.info("No projects match the current filters.")
+        return
+
+    # 2-column card grid
+    for row_start in range(0, len(visible), 2):
+        cols = st.columns(2)
+        for col_idx in range(2):
+            proj_idx = row_start + col_idx
+            if proj_idx >= len(visible):
+                break
+            proj = visible.iloc[proj_idx].to_dict()
+            pc   = _pillar_color(proj.get("pillar", ""))
+            with cols[col_idx]:
+                st.markdown(_project_card_html(proj, pc), unsafe_allow_html=True)
+                btn1, btn2 = st.columns(2)
+                if btn1.button("Edit", key=f"cp_edit_{proj['id']}", use_container_width=True):
+                    st.session_state["cp_edit_id"] = int(proj["id"])
+                    st.rerun()
+                if btn2.button("Delete", key=f"cp_del_{proj['id']}", use_container_width=True):
+                    updated = projects[projects["id"] != proj["id"]]
+                    custom_pillars = [p for p in all_pillars if p not in DEFAULT_PILLARS]
+                    extra_codes    = {k: v for k, v in all_codes.items()
+                                      if k not in CONTENT_ACCT_CODES}
+                    ok, msg = save_content_projects(
+                        updated,
+                        {"rtl_hourly_rate": rate},
+                        custom_pillars,
+                        extra_codes,
+                    )
+                    if ok:
+                        st.toast(f"Deleted '{proj.get('title', '')}'.")
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+    # ── Global Settings (bottom of page) ─────────────────────────────────────
+    st.divider()
+    with st.expander("Global Settings", expanded=False):
+        gs1, gs2 = st.columns(2)
+        hourly_rate = gs1.number_input(
+            "RTL Staff Cost ($/hr)",
+            min_value=0.0, step=0.01,
+            value=default_rate,
+            format="%.2f",
+            key="cp_hourly_rate",
+            help="Used to calculate estimated RTL labor cost per project. "
+                 "Auto-filled from Financial KPIs if set.",
+        )
+        if auto_rate > 0:
+            gs1.caption(f"Derived from Financial KPIs annual cost: ${auto_rate:.2f}/hr")
+
+        # ── Add custom pillar ─────────────────────────────────────────────────
+        st.markdown(
+            "<p style='color:#9E9E9E;font-size:0.85rem;margin-top:10px'>"
+            "Add custom pillar (leave blank to skip)</p>",
+            unsafe_allow_html=True,
+        )
+        pc1, _ = st.columns([3, 1])
+        new_pillar = pc1.text_input("New pillar name", key="cp_new_pillar",
+                                    label_visibility="collapsed",
+                                    placeholder="e.g. Joint Venture")
+
+        # ── Add custom accounting code ────────────────────────────────────────
+        st.markdown(
+            "<p style='color:#9E9E9E;font-size:0.85rem;margin-top:10px'>"
+            "Add custom accounting code (leave blank to skip)</p>",
+            unsafe_allow_html=True,
+        )
+        cc1, cc2, _ = st.columns([1, 3, 1])
+        new_code_id   = cc1.text_input("Code", key="cp_new_code_id",
+                                       label_visibility="collapsed",
+                                       placeholder="e.g. 711")
+        new_code_name = cc2.text_input("Code name", key="cp_new_code_name",
+                                       label_visibility="collapsed",
+                                       placeholder="e.g. Special Projects")
+
+        if st.button("Save Global Settings", type="primary"):
+            new_settings   = {"rtl_hourly_rate": hourly_rate}
+            custom_pillars = [p for p in all_pillars if p not in DEFAULT_PILLARS]
+            extra_codes    = {k: v for k, v in all_codes.items() if k not in CONTENT_ACCT_CODES}
+
+            if new_pillar.strip() and new_pillar.strip() not in all_pillars:
+                custom_pillars.append(new_pillar.strip())
+            if new_code_id.strip() and new_code_name.strip():
+                extra_codes[new_code_id.strip()] = new_code_name.strip()
+
+            # Clear cached auto-rate so it re-derives on next load
+            st.session_state.pop("cp_auto_rate", None)
+            ok, msg = save_content_projects(projects, new_settings, custom_pillars, extra_codes)
+            if ok:
+                st.toast("Settings saved.")
+                st.rerun()
+            else:
+                st.error(msg)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # AUTH — simple password gate
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1909,7 +3028,7 @@ def main():
             st.divider()
             kpi_mode = st.radio(
                 "KPI Module",
-                options=["Time KPIs", "Financial KPIs"],
+                options=["Time KPIs", "Financial KPIs", "Content KPIs"],
                 key="admin_kpi_mode",
             )
             st.divider()
@@ -1935,9 +3054,12 @@ def main():
         if kpi_mode == "Time KPIs":
             st.title("Team Overview — Time KPIs")
             view_team(load_all())
-        else:
+        elif kpi_mode == "Financial KPIs":
             st.title("Financial KPIs")
             view_financial_kpis()
+        else:
+            st.title("Content KPIs")
+            view_content_kpis()
         return
 
     # ══════════════════════════════════════════════════════════════════════════
