@@ -2269,54 +2269,64 @@ def view_content_kpis():
     stored_rate  = float(settings.get("rtl_hourly_rate", 0.0))
     default_rate = stored_rate if stored_rate > 0 else (auto_rate if auto_rate > 0 else 91.03)
 
-    # ── Add / Edit Project Form ───────────────────────────────────────────────
-    edit_id = st.session_state.get("cp_edit_id", None)
-
-    # When the edit target changes, wipe all form widget keys so Streamlit
-    # will honour the value= parameters we pass to each widget below.
-    _prev = st.session_state.get("_cp_prev_edit_id", "UNSET")
-    if _prev != edit_id:
-        for _k in [
-            "cp_title", "cp_type", "cp_pillar", "cp_code", "cp_owner",
-            "cp_sponsored", "cp_spons_type", "cp_spons_other", "cp_conf_pend",
-            "cp_status", "cp_format", "cp_generator", "cp_committee",
-            "cp_funding", "cp_partner_name", "cp_budget", "cp_hours",
-            "cp_draft_del", "cp_draft_com", "cp_draft_cpd",
-            "cp_lay1_del", "cp_lay1_com", "cp_lay2_del", "cp_lay2_apr",
-            "cp_print", "cp_golive", "cp_notes", "cp_pct_override",
-        ]:
-            st.session_state.pop(_k, None)
-        st.session_state["_cp_prev_edit_id"] = edit_id
-
+    # ── Add / Edit Project ────────────────────────────────────────────────────
+    # Determine which project is being edited via a dropdown selector.
+    # Embedding the project ID in every widget key guarantees Streamlit
+    # creates fresh widgets (honouring value=/index=) whenever the selection
+    # changes — no session_state juggling required.
+    edit_id   = None
     edit_proj = {}
-    if edit_id is not None and not projects.empty:
-        matches = projects[projects["id"] == edit_id]
-        if not matches.empty:
-            edit_proj = matches.iloc[0].to_dict()
 
-    form_label = f"Edit Project — {edit_proj.get('title', '')}" if edit_id else "Add New Project"
+    if not projects.empty:
+        proj_map = {
+            f"{row['title']} (#{int(row['id'])})": int(row["id"])
+            for _, row in projects.iterrows()
+        }
+        _ADD_LABEL = "— Add new project —"
+        sel_options = [_ADD_LABEL] + list(proj_map.keys())
+        sel_label   = st.selectbox(
+            "Add a new project, or select one below to edit:",
+            sel_options,
+            key="cp_edit_sel",
+        )
+        if sel_label != _ADD_LABEL:
+            edit_id = proj_map.get(sel_label)
+            if edit_id is not None:
+                matches = projects[projects["id"] == edit_id]
+                if not matches.empty:
+                    edit_proj = matches.iloc[0].to_dict()
+
+    # eid is embedded in every widget key so switching projects gives
+    # entirely new keys → Streamlit uses value=/index= fresh each time.
+    eid = str(edit_id) if edit_id else "new"
+
+    form_label = (f"Edit — {edit_proj.get('title', '')}" if edit_id
+                  else "Add New Project")
     with st.expander(form_label, expanded=(edit_id is not None or projects.empty)):
 
         # Row 1: Title | Type | Pillar
         f1, f2, f3 = st.columns([3, 2, 2])
-        cp_title  = f1.text_input("Title", key="cp_title",
+        cp_title  = f1.text_input("Title", key=f"cp_title_{eid}",
                                   value=str(edit_proj.get("title", "") or ""))
-        cp_type   = f2.selectbox("Type", CONTENT_TYPES, key="cp_type",
+        cp_type   = f2.selectbox("Type", CONTENT_TYPES, key=f"cp_type_{eid}",
                                  index=_idx(CONTENT_TYPES, edit_proj.get("type")))
-        cp_pillar = f3.selectbox("Pillar", all_pillars, key="cp_pillar",
+        cp_pillar = f3.selectbox("Pillar", all_pillars, key=f"cp_pillar_{eid}",
                                  index=_idx(all_pillars, edit_proj.get("pillar")))
 
         # Row 2: Accounting Code | Owner | Sponsored
         code_options = [f"{k} — {v}" for k, v in all_codes.items()]
         g1, g2, g3  = st.columns([3, 2, 2])
-        cp_code_raw  = g1.selectbox("Accounting Code", code_options, key="cp_code",
+        cp_code_raw  = g1.selectbox("Accounting Code", code_options,
+                                    key=f"cp_code_{eid}",
                                     index=_idx(code_options,
                                                next((f"{k} — {v}" for k, v in all_codes.items()
                                                      if k == edit_proj.get("acct_code")), None)))
-        cp_owner     = g2.selectbox("RTL Owner", RTL_OWNERS, key="cp_owner",
+        cp_owner     = g2.selectbox("RTL Owner", RTL_OWNERS, key=f"cp_owner_{eid}",
                                     index=_idx(RTL_OWNERS, edit_proj.get("owner")))
-        cp_sponsored = g3.selectbox("Sponsored?", ["No", "Yes"], key="cp_sponsored",
-                                    index=_idx(["No", "Yes"], edit_proj.get("sponsored", "No")))
+        cp_sponsored = g3.selectbox("Sponsored?", ["No", "Yes"],
+                                    key=f"cp_sponsored_{eid}",
+                                    index=_idx(["No", "Yes"],
+                                               edit_proj.get("sponsored", "No")))
 
         # Row 3 (conditional): Sponsorship Type
         cp_sponsorship_type  = ""
@@ -2324,12 +2334,12 @@ def view_content_kpis():
         if cp_sponsored == "Yes":
             sp1, sp2 = st.columns(2)
             cp_sponsorship_type = sp1.selectbox(
-                "Sponsorship Type", SPONSORSHIP_TYPES, key="cp_spons_type",
+                "Sponsorship Type", SPONSORSHIP_TYPES, key=f"cp_spons_type_{eid}",
                 index=_idx(SPONSORSHIP_TYPES, edit_proj.get("sponsorship_type")),
             )
             if cp_sponsorship_type == "Other":
                 cp_sponsorship_other = sp2.text_input(
-                    "Specify sponsorship type", key="cp_spons_other",
+                    "Specify sponsorship type", key=f"cp_spons_other_{eid}",
                     value=str(edit_proj.get("sponsorship_other", "") or ""),
                 )
 
@@ -2338,35 +2348,37 @@ def view_content_kpis():
         cp_conf_pend = h0.selectbox(
             "Confirmed/Pending",
             ["Confirmed", "Pending"],
-            key="cp_conf_pend",
+            key=f"cp_conf_pend_{eid}",
             index=_idx(["Confirmed", "Pending"],
                        edit_proj.get("confirmed_pending", "Confirmed")),
         )
-        cp_status    = h1.selectbox("Priority", PROJECT_STATUSES, key="cp_status",
+        cp_status    = h1.selectbox("Priority", PROJECT_STATUSES,
+                                    key=f"cp_status_{eid}",
                                     index=_idx(PROJECT_STATUSES, edit_proj.get("status")))
-        cp_format    = h2.selectbox("Format", FORMAT_TYPES, key="cp_format",
+        cp_format    = h2.selectbox("Format", FORMAT_TYPES, key=f"cp_format_{eid}",
                                     index=_idx(FORMAT_TYPES, edit_proj.get("format")))
         cp_generator = h3.selectbox("Content Generator", CONTENT_GENERATORS,
-                                    key="cp_generator",
+                                    key=f"cp_generator_{eid}",
                                     index=_idx(CONTENT_GENERATORS,
                                                edit_proj.get("content_generator")))
 
         # Row 5 (conditional): Committee name + Funding Source + Program Partner name
-        cp_committee     = ""
-        cp_funding       = FUNDING_SOURCES[0]
-        cp_partner_name  = ""
+        cp_committee    = ""
+        cp_funding      = FUNDING_SOURCES[0]
+        cp_partner_name = ""
         fu1, fu2 = st.columns(2)
         if cp_generator == "Committee":
             cp_committee = fu1.text_input(
-                "Committee name", key="cp_committee",
+                "Committee name", key=f"cp_committee_{eid}",
                 value=str(edit_proj.get("committee_name", "") or ""),
             )
         cp_funding = fu2.selectbox("Funding Source", FUNDING_SOURCES,
-                                   key="cp_funding",
-                                   index=_idx(FUNDING_SOURCES, edit_proj.get("funding_source")))
+                                   key=f"cp_funding_{eid}",
+                                   index=_idx(FUNDING_SOURCES,
+                                              edit_proj.get("funding_source")))
         if cp_funding == "Program Partner":
             cp_partner_name = st.text_input(
-                "Program partner name", key="cp_partner_name",
+                "Program partner name", key=f"cp_partner_name_{eid}",
                 value=str(edit_proj.get("program_partner_name", "") or ""),
             )
 
@@ -2375,12 +2387,12 @@ def view_content_kpis():
         cp_budget = b1.number_input(
             "2026 Budget ($)", min_value=0.0, step=500.0, format="%.2f",
             value=float(edit_proj.get("budget", 0.0) or 0.0),
-            key="cp_budget",
+            key=f"cp_budget_{eid}",
         )
         cp_hours = b2.number_input(
             "Est. RTL Hours", min_value=0.0, step=1.0, format="%.1f",
             value=float(edit_proj.get("est_hours", 0.0) or 0.0),
-            key="cp_hours",
+            key=f"cp_hours_{eid}",
         )
 
         # Show computed RTL labor cost estimate
@@ -2409,39 +2421,48 @@ def view_content_kpis():
 
         st.markdown("**Phase 1 — Draft**")
         d1, d2, d3 = st.columns(3)
-        cp_draft_del = d1.date_input("Draft delivered",    value=_date_val("draft_delivered"),
-                                     key="cp_draft_del")
-        cp_draft_com = d2.date_input("Draft commented",    value=_date_val("draft_commented"),
-                                     key="cp_draft_com")
-        cp_draft_cpd = d3.date_input("Draft completed",    value=_date_val("draft_completed"),
-                                     key="cp_draft_cpd")
+        cp_draft_del = d1.date_input("Draft delivered",
+                                     value=_date_val("draft_delivered"),
+                                     key=f"cp_draft_del_{eid}")
+        cp_draft_com = d2.date_input("Draft commented",
+                                     value=_date_val("draft_commented"),
+                                     key=f"cp_draft_com_{eid}")
+        cp_draft_cpd = d3.date_input("Draft completed",
+                                     value=_date_val("draft_completed"),
+                                     key=f"cp_draft_cpd_{eid}")
 
         st.markdown("**Phase 2 — Layout**")
         l1, l2, l3, l4 = st.columns(4)
-        cp_lay1_del = l1.date_input("Layout 1 delivered", value=_date_val("layout1_delivered"),
-                                    key="cp_lay1_del")
-        cp_lay1_com = l2.date_input("Layout 1 commented", value=_date_val("layout1_commented"),
-                                    key="cp_lay1_com")
-        cp_lay2_del = l3.date_input("Layout 2 delivered", value=_date_val("layout2_delivered"),
-                                    key="cp_lay2_del")
-        cp_lay2_apr = l4.date_input("Layout 2 approved",  value=_date_val("layout2_approved"),
-                                    key="cp_lay2_apr")
+        cp_lay1_del = l1.date_input("Layout 1 delivered",
+                                    value=_date_val("layout1_delivered"),
+                                    key=f"cp_lay1_del_{eid}")
+        cp_lay1_com = l2.date_input("Layout 1 commented",
+                                    value=_date_val("layout1_commented"),
+                                    key=f"cp_lay1_com_{eid}")
+        cp_lay2_del = l3.date_input("Layout 2 delivered",
+                                    value=_date_val("layout2_delivered"),
+                                    key=f"cp_lay2_del_{eid}")
+        cp_lay2_apr = l4.date_input("Layout 2 approved",
+                                    value=_date_val("layout2_approved"),
+                                    key=f"cp_lay2_apr_{eid}")
 
         st.markdown("**Phase 3 — Production**")
         p1c, p2c = st.columns(2)
         show_print = cp_format in ("Print", "Both", "TBD")
         show_live  = cp_format in ("Digital", "Both", "TBD")
         cp_print_date = (
-            p1c.date_input("Print date",   value=_date_val("print_date"),    key="cp_print")
+            p1c.date_input("Print date", value=_date_val("print_date"),
+                           key=f"cp_print_{eid}")
             if show_print else None
         )
         cp_go_live = (
-            p2c.date_input("Go-live date", value=_date_val("go_live_date"),  key="cp_golive")
+            p2c.date_input("Go-live date", value=_date_val("go_live_date"),
+                           key=f"cp_golive_{eid}")
             if show_live else None
         )
 
         # Notes
-        cp_notes = st.text_area("Notes (optional)", key="cp_notes",
+        cp_notes = st.text_area("Notes (optional)", key=f"cp_notes_{eid}",
                                 value=str(edit_proj.get("notes", "") or ""),
                                 height=80)
 
@@ -2458,7 +2479,7 @@ def view_content_kpis():
             "% Complete Override",
             min_value=0, max_value=100, step=1,
             value=int(float(edit_proj.get("pct_override", 0) or 0)),
-            key="cp_pct_override",
+            key=f"cp_pct_override_{eid}",
             label_visibility="collapsed",
         )
         if cp_pct_override > 0:
@@ -2472,10 +2493,9 @@ def view_content_kpis():
         def _fmt_date(d):
             return d.isoformat() if d else ""
 
-        # ── Save / Cancel buttons ─────────────────────────────────────────────
-        btn_col1, btn_col2 = st.columns([2, 1])
+        # ── Save button ───────────────────────────────────────────────────────
         save_label = "Update Project" if edit_id else "Add Project"
-        if btn_col1.button(save_label, type="primary", use_container_width=True):
+        if st.button(save_label, type="primary", use_container_width=True):
             if not cp_title.strip():
                 st.error("Project title is required.")
             else:
@@ -2522,7 +2542,8 @@ def view_content_kpis():
                     updated = pd.concat([projects, new_df], ignore_index=True)
 
                 custom_pillars = [p for p in all_pillars if p not in DEFAULT_PILLARS]
-                extra_codes    = {k: v for k, v in all_codes.items() if k not in CONTENT_ACCT_CODES}
+                extra_codes    = {k: v for k, v in all_codes.items()
+                                  if k not in CONTENT_ACCT_CODES}
                 ok, msg = save_content_projects(
                     updated,
                     {"rtl_hourly_rate": rate},
@@ -2530,15 +2551,12 @@ def view_content_kpis():
                     extra_codes,
                 )
                 if ok:
-                    st.session_state.pop("cp_edit_id", None)
+                    # Reset selector to "Add new project" after a successful save
+                    st.session_state.pop("cp_edit_sel", None)
                     st.toast("Project saved.")
                     st.rerun()
                 else:
                     st.error(msg)
-
-        if edit_id and btn_col2.button("Cancel Edit", use_container_width=True):
-            st.session_state.pop("cp_edit_id", None)
-            st.rerun()
 
     # ── Dashboard ─────────────────────────────────────────────────────────────
     if projects.empty:
@@ -2826,7 +2844,10 @@ def view_content_kpis():
                 st.markdown(_project_card_html(proj, pc), unsafe_allow_html=True)
                 btn1, btn2 = st.columns(2)
                 if btn1.button("Edit", key=f"cp_edit_{proj['id']}", use_container_width=True):
-                    st.session_state["cp_edit_id"] = int(proj["id"])
+                    # Point the edit selector to this project; page scrolls to top
+                    st.session_state["cp_edit_sel"] = (
+                        f"{proj['title']} (#{int(proj['id'])})"
+                    )
                     st.rerun()
                 if btn2.button("Delete", key=f"cp_del_{proj['id']}", use_container_width=True):
                     updated = projects[projects["id"] != proj["id"]]
