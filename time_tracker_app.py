@@ -52,253 +52,7 @@ CVU_PALETTE = [
     "#FA3F26",
 ]
 
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-/* ══════════════════════════════════════════════════════
-   FORCE DARK THEME — always, regardless of system mode
-   ══════════════════════════════════════════════════════ */
-
-/* CSS variables — applies in all colour schemes */
-:root,
-:root[data-theme="light"],
-:root[data-theme="dark"] {
-    --background-color: #171717;
-    --secondary-background-color: #282828;
-    --text-color: #FCFCFC;
-    --primary-color: #B4E817;
-    color-scheme: dark;
-}
-
-/* Base */
-html, body {
-    font-family: 'Inter', Arial, sans-serif !important;
-    background-color: #171717 !important;
-    color: #FCFCFC !important;
-}
-
-/* App containers */
-.stApp,
-.stApp > header,
-[data-testid="stAppViewContainer"],
-[data-testid="stAppViewContainer"] > section,
-[data-testid="stMain"],
-[data-testid="stMain"] > div,
-[data-testid="block-container"],
-section.main, .main, .main > div {
-    background-color: #171717 !important;
-    background: #171717 !important;
-    color: #FCFCFC !important;
-}
-
-/* ── Override specifically inside light-mode media query ──
-   Streamlit applies its light theme here, so we counter it
-   at the same specificity level */
-@media (prefers-color-scheme: light) {
-    :root {
-        --background-color: #171717;
-        --secondary-background-color: #282828;
-        --text-color: #FCFCFC;
-        --primary-color: #B4E817;
-        color-scheme: dark;
-    }
-    html, body {
-        background-color: #171717 !important;
-        color: #FCFCFC !important;
-    }
-    .stApp,
-    [data-testid="stAppViewContainer"],
-    [data-testid="stAppViewContainer"] > section,
-    [data-testid="stMain"],
-    [data-testid="stMain"] > div,
-    [data-testid="block-container"],
-    section.main, .main, .main > div {
-        background-color: #171717 !important;
-        background: #171717 !important;
-        color: #FCFCFC !important;
-    }
-    p, span, label, div, li, a,
-    h1, h2, h3, h4, h5, h6 {
-        color: #FCFCFC !important;
-    }
-    [data-testid="stTextInput"] input,
-    [data-testid="stNumberInput"] input,
-    [data-testid="stDateInput"] input,
-    [data-testid="stTextArea"] textarea {
-        background-color: #282828 !important;
-        color: #FCFCFC !important;
-        border-color: #4F4F4F !important;
-    }
-    [data-baseweb="select"] > div,
-    [data-baseweb="select"] * {
-        background-color: #282828 !important;
-        color: #FCFCFC !important;
-    }
-    [data-baseweb="popover"], [data-baseweb="menu"],
-    [role="listbox"], [role="option"] {
-        background-color: #282828 !important;
-        color: #FCFCFC !important;
-    }
-    [data-testid="stExpander"],
-    [data-testid="stExpander"] summary,
-    [data-testid="stExpander"] > div {
-        background-color: #282828 !important;
-        color: #FCFCFC !important;
-        border-color: #4F4F4F !important;
-    }
-    .stButton > button:not([kind="primary"]) {
-        background-color: #282828 !important;
-        color: #FCFCFC !important;
-        border-color: #4F4F4F !important;
-    }
-    div[data-testid="stMetric"] {
-        background: #282828 !important;
-    }
-    div[data-testid="stMetric"] * {
-        color: #FCFCFC !important;
-    }
-    hr { border-color: #4F4F4F !important; }
-}
-
-/* All text */
-p, span, label, div, li, a,
-h1, h2, h3, h4, h5, h6,
-.stMarkdown, [data-testid="stMarkdownContainer"],
-[data-testid="stText"] {
-    color: #FCFCFC !important;
-}
-
-/* Text / number / date inputs */
-[data-testid="stTextInput"] input,
-[data-testid="stNumberInput"] input,
-[data-testid="stDateInput"] input,
-[data-testid="stTextArea"] textarea {
-    background-color: #282828 !important;
-    color: #FCFCFC !important;
-    border-color: #4F4F4F !important;
-}
-
-/* Selectboxes & dropdowns */
-[data-baseweb="select"] > div,
-[data-baseweb="select"] * {
-    background-color: #282828 !important;
-    color: #FCFCFC !important;
-    border-color: #4F4F4F !important;
-}
-[data-baseweb="popover"],
-[data-baseweb="menu"],
-[role="listbox"],
-[role="option"] {
-    background-color: #282828 !important;
-    color: #FCFCFC !important;
-}
-
-/* Expanders */
-[data-testid="stExpander"],
-[data-testid="stExpander"] summary,
-[data-testid="stExpander"] > div {
-    background-color: #282828 !important;
-    border-color: #4F4F4F !important;
-    color: #FCFCFC !important;
-}
-
-/* Radio & checkbox */
-[data-testid="stRadio"] label,
-[data-testid="stCheckbox"] label,
-[data-testid="stRadio"] div,
-[data-testid="stCheckbox"] div {
-    color: #FCFCFC !important;
-    background-color: transparent !important;
-}
-
-/* Data editor */
-[data-testid="stDataFrameResizable"],
-[data-testid="data-grid-canvas"],
-.dvn-scroller {
-    background-color: #282828 !important;
-}
-
-/* Caption text */
-[data-testid="stCaptionContainer"], .stCaption, small {
-    color: #9E9E9E !important;
-}
-
-/* Dividers */
-hr { border-color: #4F4F4F !important; }
-
-/* ── Sidebar ── */
-section[data-testid="stSidebar"],
-section[data-testid="stSidebar"] > div {
-    background-color: #171717 !important;
-    border-right: 1px solid #282828;
-}
-section[data-testid="stSidebar"] * {
-    color: #FCFCFC !important;
-    background-color: transparent;
-}
-section[data-testid="stSidebar"] button {
-    background-color: #282828 !important;
-    border-color: #4F4F4F !important;
-}
-
-/* ── Metric cards ── */
-div[data-testid="stMetric"] {
-    background: #282828 !important;
-    border-radius: 6px;
-    padding: 12px 16px;
-    border-left: 3px solid #B4E817;
-}
-div[data-testid="stMetric"] * {
-    color: #FCFCFC !important;
-}
-
-/* ── Tab active indicator ── */
-div[data-testid="stTabs"] button[aria-selected="true"] {
-    color: #B4E817 !important;
-    border-bottom-color: #B4E817 !important;
-}
-div[data-testid="stTabs"] button {
-    color: #9E9E9E !important;
-    background-color: transparent !important;
-}
-
-/* ── Primary buttons ── */
-.stButton > button[kind="primary"] {
-    background-color: #B4E817 !important;
-    color: #171717 !important;
-    font-weight: 600;
-    border: none;
-    font-family: 'Inter', Arial, sans-serif;
-}
-.stButton > button[kind="primary"]:hover {
-    background-color: #c8f020 !important;
-    color: #171717 !important;
-}
-
-/* ── Secondary buttons ── */
-.stButton > button:not([kind="primary"]) {
-    background-color: #282828 !important;
-    color: #FCFCFC !important;
-    border-color: #4F4F4F !important;
-}
-
-/* ── Category section headers ── */
-.cat-header {
-    background: #282828;
-    border-left: 3px solid #B4E817;
-    padding: 6px 12px;
-    border-radius: 0 4px 4px 0;
-    font-weight: 600;
-    color: #FCFCFC !important;
-    font-size: 0.88rem;
-    letter-spacing: 0.03em;
-    margin-top: 14px;
-    margin-bottom: 4px;
-}
-</style>
-
-""", unsafe_allow_html=True)
+# CSS is injected inside main() via _inject_css() so it adapts to the dark/light toggle.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CONFIGURATION
@@ -790,37 +544,64 @@ def save_hours(person: str, d: date, hours: dict) -> tuple:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CHART THEME HELPER
+# CHART THEME HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
+
+def _chart_colors() -> dict:
+    """
+    Return a dict of colour tokens that adapt to the current dark/light setting.
+    Reads st.session_state["dark_mode"] — defaults to True (dark).
+    """
+    dark = st.session_state.get("dark_mode", True)
+    if dark:
+        return {
+            "text":     CVU_WHITE,      # primary text / tick labels
+            "subtext":  CVU_GRAY,       # secondary / axis labels
+            "plot_bg":  CVU_BLACK,      # chart plot area background
+            "grid":     CVU_BORDER,     # grid lines
+            "hover_bg": CVU_SURFACE,    # tooltip background
+            "refline":  CVU_WHITE,      # reference / annotation lines
+        }
+    else:
+        return {
+            "text":     "#1A1A1A",
+            "subtext":  "#555555",
+            "plot_bg":  "rgba(0,0,0,0)",   # transparent — page bg shows through
+            "grid":     "#CCCCCC",
+            "hover_bg": "#EBEBEB",
+            "refline":  "#555555",
+        }
+
 
 def _chart_base(**overrides) -> dict:
     """
-    Base Plotly layout dict with CVU dark-theme styling.
+    Base Plotly layout dict with CVU styling that adapts to dark/light mode.
     Pass keyword args to override any key.
     """
+    c = _chart_colors()
     layout = dict(
         paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor=CVU_BLACK,
-        font=dict(family="Inter, Arial, sans-serif", color=CVU_WHITE, size=12),
+        plot_bgcolor=c["plot_bg"],
+        font=dict(family="Inter, Arial, sans-serif", color=c["text"], size=12),
         xaxis=dict(
-            gridcolor=CVU_BORDER,
-            zerolinecolor=CVU_BORDER,
-            tickfont=dict(color=CVU_GRAY, size=11),
+            gridcolor=c["grid"],
+            zerolinecolor=c["grid"],
+            tickfont=dict(color=c["subtext"], size=11),
         ),
         yaxis=dict(
-            gridcolor=CVU_BORDER,
-            zerolinecolor=CVU_BORDER,
-            tickfont=dict(color=CVU_GRAY, size=11),
+            gridcolor=c["grid"],
+            zerolinecolor=c["grid"],
+            tickfont=dict(color=c["subtext"], size=11),
             automargin=True,
         ),
         legend=dict(
             bgcolor="rgba(0,0,0,0)",
-            font=dict(color=CVU_WHITE, size=11),
+            font=dict(color=c["text"], size=11),
         ),
         margin=dict(l=10, r=20, t=36, b=30),
         hoverlabel=dict(
-            bgcolor=CVU_SURFACE,
-            font=dict(color=CVU_WHITE, family="Inter, Arial, sans-serif"),
+            bgcolor=c["hover_bg"],
+            font=dict(color=c["text"], family="Inter, Arial, sans-serif"),
         ),
     )
     layout.update(overrides)
@@ -1002,6 +783,7 @@ def view_bulk_edit(person: str):
 
 def view_history(person: str, df: pd.DataFrame):
     st.subheader("My History")
+    c = _chart_colors()
 
     pdf = df[(df["person"] == person) & df["task"].str.startswith("- ")]
     if pdf.empty:
@@ -1043,12 +825,12 @@ def view_history(person: str, df: pd.DataFrame):
         hovertemplate="%{y}<br>Hours: %{x:.1f}<extra></extra>",
     ))
     fig_cat.update_layout(**_chart_base(
-        title=dict(text="Hours by Category", font=dict(color=CVU_WHITE, size=14)),
+        title=dict(text="Hours by Category", font=dict(color=c["text"], size=14)),
         height=max(300, len(cat_df) * 55),
-        yaxis=dict(automargin=True, tickfont=dict(color=CVU_WHITE, size=11),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
-        xaxis=dict(title="Hours", tickfont=dict(color=CVU_GRAY),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+        yaxis=dict(automargin=True, tickfont=dict(color=c["text"], size=11),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"]),
+        xaxis=dict(title="Hours", tickfont=dict(color=c["subtext"]),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"]),
     ))
     st.plotly_chart(fig_cat, use_container_width=True)
 
@@ -1074,19 +856,19 @@ def view_history(person: str, df: pd.DataFrame):
         hovertemplate="Date: %{x|%b %d}<br>Cumulative: %{y:.1f} hrs<extra></extra>",
     ))
     fig_line.update_layout(**_chart_base(
-        title=dict(text="Daily Hours & Running Total", font=dict(color=CVU_WHITE, size=14)),
+        title=dict(text="Daily Hours & Running Total", font=dict(color=c["text"], size=14)),
         height=320,
-        yaxis=dict(title="Daily Hours", gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER,
-                   tickfont=dict(color=CVU_GRAY)),
+        yaxis=dict(title="Daily Hours", gridcolor=c["grid"], zerolinecolor=c["grid"],
+                   tickfont=dict(color=c["subtext"])),
         yaxis2=dict(
             title="Cumulative Hours",
             overlaying="y",
             side="right",
             tickfont=dict(color=CVU_PALETTE[0]),
             showgrid=False,
-            zerolinecolor=CVU_BORDER,
+            zerolinecolor=c["grid"],
         ),
-        legend=dict(orientation="h", y=1.08, font=dict(color=CVU_WHITE)),
+        legend=dict(orientation="h", y=1.08, font=dict(color=c["text"])),
     ))
     st.plotly_chart(fig_line, use_container_width=True)
 
@@ -1111,6 +893,7 @@ def view_history(person: str, df: pd.DataFrame):
 
 def view_team(df: pd.DataFrame):
     st.subheader("Team Overview Dashboard")
+    c = _chart_colors()
     if df.empty:
         st.info("No time data found. Make sure the Excel files are in the same folder as the app.")
         return
@@ -1179,12 +962,12 @@ def view_team(df: pd.DataFrame):
                 marker_colors=[CVU_GREEN, CVU_PALETTE[0]],
                 hovertemplate="%{label}<br>%{value:.1f} hrs (%{percent})<extra></extra>",
                 textinfo="percent",
-                textfont=dict(color=CVU_WHITE, size=13, family="Inter, Arial, sans-serif"),
+                textfont=dict(color=c["text"], size=13, family="Inter, Arial, sans-serif"),
             ))
             figA.update_layout(**_chart_base(
                 height=300,
                 title=dict(text="Research (900s) vs Other",
-                           font=dict(color=CVU_WHITE, size=13), x=0.5, xanchor="center"),
+                           font=dict(color=c["text"], size=13), x=0.5, xanchor="center"),
                 showlegend=True,
                 legend=dict(orientation="h", y=-0.08, x=0.5, xanchor="center"),
                 margin=dict(t=50, b=40, l=20, r=20),
@@ -1210,12 +993,12 @@ def view_team(df: pd.DataFrame):
                 marker_colors=[CVU_GREEN, CVU_PALETTE[1]],
                 hovertemplate="%{label}<br>%{value:.1f} hrs (%{percent})<extra></extra>",
                 textinfo="percent",
-                textfont=dict(color=CVU_WHITE, size=13, family="Inter, Arial, sans-serif"),
+                textfont=dict(color=c["text"], size=13, family="Inter, Arial, sans-serif"),
             ))
             figB.update_layout(**_chart_base(
                 height=300,
                 title=dict(text="Funded vs Unfunded Time",
-                           font=dict(color=CVU_WHITE, size=13), x=0.5, xanchor="center"),
+                           font=dict(color=c["text"], size=13), x=0.5, xanchor="center"),
                 showlegend=True,
                 legend=dict(orientation="h", y=-0.08, x=0.5, xanchor="center"),
                 margin=dict(t=50, b=40, l=20, r=20),
@@ -1245,13 +1028,13 @@ def view_team(df: pd.DataFrame):
     ))
     fig1.update_layout(**_chart_base(
         height=max(300, len(cat_df) * 55),
-        yaxis=dict(automargin=True, tickfont=dict(color=CVU_WHITE, size=11),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER,
+        yaxis=dict(automargin=True, tickfont=dict(color=c["text"], size=11),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"],
                    tickmode="array",
                    tickvals=cat_df["category"].tolist(),
                    ticktext=cat_df["category"].tolist()),
-        xaxis=dict(title="Total Hours", tickfont=dict(color=CVU_GRAY),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+        xaxis=dict(title="Total Hours", tickfont=dict(color=c["subtext"]),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"]),
     ))
     st.plotly_chart(fig1, use_container_width=True)
     st.divider()
@@ -1285,20 +1068,20 @@ def view_team(df: pd.DataFrame):
     fig2.add_hline(
         y=full_day_hrs,
         line_dash="dot",
-        line_color=CVU_WHITE,
+        line_color=c["refline"],
         opacity=0.5,
         annotation_text=f"{full_day_hrs:.0f} hrs (full day)",
         annotation_position="top right",
-        annotation_font_color=CVU_WHITE,
+        annotation_font_color=c["refline"],
         annotation_font_size=11,
     )
     fig2.update_layout(**_chart_base(
         barmode="stack",
         height=360,
-        xaxis=dict(tickangle=-40, tickfont=dict(color=CVU_GRAY),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
-        yaxis=dict(title="Hours", tickfont=dict(color=CVU_GRAY),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+        xaxis=dict(tickangle=-40, tickfont=dict(color=c["subtext"]),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"]),
+        yaxis=dict(title="Hours", tickfont=dict(color=c["subtext"]),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"]),
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     ))
     st.plotly_chart(fig2, use_container_width=True)
@@ -1323,10 +1106,10 @@ def view_team(df: pd.DataFrame):
     fig3.update_layout(**_chart_base(
         barmode="stack",
         height=420,
-        xaxis=dict(tickfont=dict(color=CVU_WHITE, size=12),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
-        yaxis=dict(title="Hours", tickfont=dict(color=CVU_GRAY),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+        xaxis=dict(tickfont=dict(color=c["text"], size=12),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"]),
+        yaxis=dict(title="Hours", tickfont=dict(color=c["subtext"]),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"]),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=10)),
     ))
     st.plotly_chart(fig3, use_container_width=True)
@@ -1356,10 +1139,10 @@ def view_team(df: pd.DataFrame):
         ))
     fig4.update_layout(**_chart_base(
         height=340,
-        xaxis=dict(title="", tickfont=dict(color=CVU_GRAY),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
-        yaxis=dict(title="Cumulative Hours", tickfont=dict(color=CVU_GRAY),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+        xaxis=dict(title="", tickfont=dict(color=c["subtext"]),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"]),
+        yaxis=dict(title="Cumulative Hours", tickfont=dict(color=c["subtext"]),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"]),
         legend=dict(orientation="h", y=1.08),
     ))
     st.plotly_chart(fig4, use_container_width=True)
@@ -1397,10 +1180,10 @@ def view_team(df: pd.DataFrame):
         ))
     fig5.update_layout(**_chart_base(
         height=320,
-        xaxis=dict(tickangle=-40, tickfont=dict(color=CVU_GRAY),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
-        yaxis=dict(title="Hours", tickfont=dict(color=CVU_GRAY),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+        xaxis=dict(tickangle=-40, tickfont=dict(color=c["subtext"]),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"]),
+        yaxis=dict(title="Hours", tickfont=dict(color=c["subtext"]),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"]),
     ))
     st.plotly_chart(fig5, use_container_width=True)
     st.divider()
@@ -1426,14 +1209,14 @@ def view_team(df: pd.DataFrame):
     ))
     fig6.update_layout(**_chart_base(
         height=max(300, len(cost_df) * 55),
-        yaxis=dict(automargin=True, tickfont=dict(color=CVU_WHITE, size=11),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER,
+        yaxis=dict(automargin=True, tickfont=dict(color=c["text"], size=11),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"],
                    tickmode="array",
                    tickvals=cost_df["category"].tolist(),
                    ticktext=cost_df["category"].tolist()),
         xaxis=dict(title=f"Estimated Cost (USD @ ${BLENDED_RATE:.0f}/hr)",
-                   tickprefix="$", tickfont=dict(color=CVU_GRAY),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+                   tickprefix="$", tickfont=dict(color=c["subtext"]),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"]),
     ))
     st.plotly_chart(fig6, use_container_width=True)
     st.divider()
@@ -1456,6 +1239,7 @@ def view_team(df: pd.DataFrame):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def view_financial_kpis():
+    c = _chart_colors()
     txns, settings, all_codes = load_finances()
 
     # ── Settings & Goals ──────────────────────────────────────────────────────
@@ -1622,12 +1406,12 @@ def view_financial_kpis():
                 marker_colors=[STATUS_COLORS.get(s, CVU_GRAY) for s in status_grp["status"]],
                 hovertemplate="%{label}<br>$%{value:,.0f} (%{percent})<extra></extra>",
                 textinfo="percent",
-                textfont=dict(color=CVU_WHITE, size=12, family="Inter, Arial, sans-serif"),
+                textfont=dict(color=c["text"], size=12, family="Inter, Arial, sans-serif"),
             ))
             figA.update_layout(**_chart_base(
                 height=300,
                 title=dict(text="Income by Status",
-                           font=dict(color=CVU_WHITE, size=13), x=0.5, xanchor="center"),
+                           font=dict(color=c["text"], size=13), x=0.5, xanchor="center"),
                 showlegend=True,
                 legend=dict(orientation="h", y=-0.12, x=0.5, xanchor="center"),
                 margin=dict(t=50, b=55, l=20, r=20),
@@ -1661,22 +1445,22 @@ def view_financial_kpis():
             figB.add_vline(
                 x=annual_goal_val,
                 line_dash="dot",
-                line_color=CVU_WHITE,
+                line_color=c["refline"],
                 annotation_text=f"Goal  ${annual_goal_val:,.0f}",
-                annotation_font_color=CVU_WHITE,
+                annotation_font_color=c["refline"],
                 annotation_position="top right",
             )
             figB.update_layout(**_chart_base(
                 barmode="stack",
                 height=220,
                 title=dict(text="Progress to Annual Income Goal",
-                           font=dict(color=CVU_WHITE, size=13), x=0.5, xanchor="center"),
+                           font=dict(color=c["text"], size=13), x=0.5, xanchor="center"),
                 showlegend=True,
                 legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"),
                 margin=dict(t=50, b=90, l=20, r=20),
-                xaxis=dict(tickprefix="$", tickfont=dict(color=CVU_GRAY),
-                           gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
-                yaxis=dict(showticklabels=False, gridcolor=CVU_BORDER),
+                xaxis=dict(tickprefix="$", tickfont=dict(color=c["subtext"]),
+                           gridcolor=c["grid"], zerolinecolor=c["grid"]),
+                yaxis=dict(showticklabels=False, gridcolor=c["grid"]),
             ))
             st.plotly_chart(figB, use_container_width=True)
 
@@ -1723,10 +1507,10 @@ def view_financial_kpis():
         figC.update_layout(**_chart_base(
             barmode="group",
             height=360,
-            xaxis=dict(tickangle=-35, tickfont=dict(color=CVU_GRAY, size=10),
-                       gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
-            yaxis=dict(title="Amount ($)", tickprefix="$", tickfont=dict(color=CVU_GRAY),
-                       gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+            xaxis=dict(tickangle=-35, tickfont=dict(color=c["subtext"], size=10),
+                       gridcolor=c["grid"], zerolinecolor=c["grid"]),
+            yaxis=dict(title="Amount ($)", tickprefix="$", tickfont=dict(color=c["subtext"]),
+                       gridcolor=c["grid"], zerolinecolor=c["grid"]),
             legend=dict(orientation="h", y=1.08),
         ))
         st.plotly_chart(figC, use_container_width=True)
@@ -1787,16 +1571,16 @@ def view_financial_kpis():
                 text=f"  {pct:.0f}%",
                 showarrow=False,
                 xanchor="left",
-                font=dict(color=CVU_WHITE, size=11, family="Inter, Arial, sans-serif"),
+                font=dict(color=c["text"], size=11, family="Inter, Arial, sans-serif"),
             )
 
         figD.update_layout(**_chart_base(
             barmode="stack",
             height=max(300, len(code_goal_rows) * 54),
-            yaxis=dict(automargin=True, tickfont=dict(color=CVU_WHITE, size=11),
-                       gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
-            xaxis=dict(title="Amount ($)", tickprefix="$", tickfont=dict(color=CVU_GRAY),
-                       gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+            yaxis=dict(automargin=True, tickfont=dict(color=c["text"], size=11),
+                       gridcolor=c["grid"], zerolinecolor=c["grid"]),
+            xaxis=dict(title="Amount ($)", tickprefix="$", tickfont=dict(color=c["subtext"]),
+                       gridcolor=c["grid"], zerolinecolor=c["grid"]),
             legend=dict(orientation="h", y=1.06),
         ))
         st.plotly_chart(figD, use_container_width=True)
@@ -1879,10 +1663,10 @@ def view_financial_kpis():
     figE.update_layout(**_chart_base(
         barmode="relative",
         height=360,
-        xaxis=dict(tickfont=dict(color=CVU_GRAY),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
-        yaxis=dict(title="Amount ($)", tickprefix="$", tickfont=dict(color=CVU_GRAY),
-                   gridcolor=CVU_BORDER, zerolinecolor=CVU_BORDER),
+        xaxis=dict(tickfont=dict(color=c["subtext"]),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"]),
+        yaxis=dict(title="Amount ($)", tickprefix="$", tickfont=dict(color=c["subtext"]),
+                   gridcolor=c["grid"], zerolinecolor=c["grid"]),
         legend=dict(orientation="h", y=1.08),
     ))
     st.plotly_chart(figE, use_container_width=True)
@@ -2067,10 +1851,217 @@ def view_landing():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# CSS INJECTION  (adapts to dark / light toggle)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _inject_css(dark_mode: bool):
+    """
+    Inject a complete CSS theme into the page.
+    The sidebar is always dark (CVU brand element).
+    The main content area switches between dark and light.
+    """
+    if dark_mode:
+        bg          = "#171717"
+        card_bg     = "#282828"
+        text        = "#FCFCFC"
+        sub_text    = "#9E9E9E"
+        border      = "#4F4F4F"
+        input_bg    = "#282828"
+        btn2_bg     = "#282828"
+        btn2_text   = "#FCFCFC"
+        btn2_border = "#4F4F4F"
+        accent      = "#B4E817"    # Volt Green on dark
+        tab_idle    = "#9E9E9E"
+        caption_col = "#9E9E9E"
+    else:
+        bg          = "#F5F5F5"
+        card_bg     = "#E8E8E8"
+        text        = "#1A1A1A"
+        sub_text    = "#555555"
+        border      = "#CCCCCC"
+        input_bg    = "#FFFFFF"
+        btn2_bg     = "#E8E8E8"
+        btn2_text   = "#1A1A1A"
+        btn2_border = "#CCCCCC"
+        accent      = "#66CC00"    # Volt Green variant — readable on light
+        tab_idle    = "#666666"
+        caption_col = "#666666"
+
+    st.markdown(f"""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ── Base ── */
+html, body {{
+    font-family: 'Inter', Arial, sans-serif !important;
+    background-color: {bg} !important;
+    color: {text} !important;
+}}
+
+/* ── App containers ── */
+.stApp,
+.stApp > header,
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewContainer"] > section,
+[data-testid="stMain"],
+[data-testid="stMain"] > div,
+[data-testid="block-container"],
+section.main, .main, .main > div {{
+    background-color: {bg} !important;
+    background: {bg} !important;
+    color: {text} !important;
+}}
+
+/* ── All text ── */
+p, span, label, div, li, a,
+h1, h2, h3, h4, h5, h6,
+.stMarkdown, [data-testid="stMarkdownContainer"],
+[data-testid="stText"] {{
+    color: {text} !important;
+}}
+
+/* ── Text / number / date inputs ── */
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stDateInput"] input,
+[data-testid="stTextArea"] textarea {{
+    background-color: {input_bg} !important;
+    color: {text} !important;
+    border-color: {border} !important;
+}}
+
+/* ── Selectboxes & dropdowns ── */
+[data-baseweb="select"] > div,
+[data-baseweb="select"] * {{
+    background-color: {input_bg} !important;
+    color: {text} !important;
+    border-color: {border} !important;
+}}
+[data-baseweb="popover"],
+[data-baseweb="menu"],
+[role="listbox"],
+[role="option"] {{
+    background-color: {input_bg} !important;
+    color: {text} !important;
+}}
+
+/* ── Expanders ── */
+[data-testid="stExpander"],
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] > div {{
+    background-color: {card_bg} !important;
+    border-color: {border} !important;
+    color: {text} !important;
+}}
+
+/* ── Radio & checkbox ── */
+[data-testid="stRadio"] label,
+[data-testid="stCheckbox"] label,
+[data-testid="stRadio"] div,
+[data-testid="stCheckbox"] div {{
+    color: {text} !important;
+    background-color: transparent !important;
+}}
+
+/* ── Data editor ── */
+[data-testid="stDataFrameResizable"],
+[data-testid="data-grid-canvas"],
+.dvn-scroller {{
+    background-color: {card_bg} !important;
+}}
+
+/* ── Caption / secondary text ── */
+[data-testid="stCaptionContainer"], .stCaption, small {{
+    color: {caption_col} !important;
+}}
+
+/* ── Dividers ── */
+hr {{ border-color: {border} !important; }}
+
+/* ── Sidebar — always dark ── */
+section[data-testid="stSidebar"],
+section[data-testid="stSidebar"] > div {{
+    background-color: #171717 !important;
+    border-right: 1px solid #282828;
+}}
+section[data-testid="stSidebar"] * {{
+    color: #FCFCFC !important;
+    background-color: transparent;
+}}
+section[data-testid="stSidebar"] button {{
+    background-color: #282828 !important;
+    border-color: #4F4F4F !important;
+    color: #FCFCFC !important;
+}}
+
+/* ── Metric cards ── */
+div[data-testid="stMetric"] {{
+    background: {card_bg} !important;
+    border-radius: 6px;
+    padding: 12px 16px;
+    border-left: 3px solid {accent};
+}}
+div[data-testid="stMetric"] * {{
+    color: {text} !important;
+}}
+
+/* ── Tab active indicator ── */
+div[data-testid="stTabs"] button[aria-selected="true"] {{
+    color: {accent} !important;
+    border-bottom-color: {accent} !important;
+}}
+div[data-testid="stTabs"] button {{
+    color: {tab_idle} !important;
+    background-color: transparent !important;
+}}
+
+/* ── Primary buttons ── */
+.stButton > button[kind="primary"] {{
+    background-color: {accent} !important;
+    color: #171717 !important;
+    font-weight: 600;
+    border: none;
+    font-family: 'Inter', Arial, sans-serif;
+}}
+.stButton > button[kind="primary"]:hover {{
+    filter: brightness(1.1);
+    color: #171717 !important;
+}}
+
+/* ── Secondary buttons ── */
+.stButton > button:not([kind="primary"]) {{
+    background-color: {btn2_bg} !important;
+    color: {btn2_text} !important;
+    border-color: {btn2_border} !important;
+}}
+
+/* ── Category section headers ── */
+.cat-header {{
+    background: {card_bg};
+    border-left: 3px solid {accent};
+    padding: 6px 12px;
+    border-radius: 0 4px 4px 0;
+    font-weight: 600;
+    color: {text} !important;
+    font-size: 0.88rem;
+    letter-spacing: 0.03em;
+    margin-top: 14px;
+    margin-bottom: 4px;
+}}
+</style>
+""", unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR + MAIN APP
 # ══════════════════════════════════════════════════════════════════════════════
 
 def main():
+    # ── Theme — must be first so CSS is injected before any content ───────────
+    if "dark_mode" not in st.session_state:
+        st.session_state["dark_mode"] = True
+    _inject_css(st.session_state["dark_mode"])
+
     # ── Auth gate ─────────────────────────────────────────────────────────────
     if not _check_auth():
         return
@@ -2089,6 +2080,18 @@ def main():
                 options=["Time KPIs", "Financial KPIs"],
                 key="admin_kpi_mode",
             )
+            st.divider()
+            # ── Theme toggle ──────────────────────────────────────────────────
+            theme_choice = st.radio(
+                "Theme",
+                options=["Dark", "Light"],
+                index=0 if st.session_state["dark_mode"] else 1,
+                key="admin_theme_radio",
+                horizontal=True,
+            )
+            if (theme_choice == "Dark") != st.session_state["dark_mode"]:
+                st.session_state["dark_mode"] = (theme_choice == "Dark")
+                st.rerun()
             st.divider()
             if st.button("Refresh Data", use_container_width=True):
                 load_all.clear()
@@ -2128,6 +2131,20 @@ def main():
             options=["My Time", "Team Overview"],
             label_visibility="collapsed",
         )
+
+        st.divider()
+
+        # ── Theme toggle ──────────────────────────────────────────────────────
+        theme_choice = st.radio(
+            "Theme",
+            options=["Dark", "Light"],
+            index=0 if st.session_state["dark_mode"] else 1,
+            key="staff_theme_radio",
+            horizontal=True,
+        )
+        if (theme_choice == "Dark") != st.session_state["dark_mode"]:
+            st.session_state["dark_mode"] = (theme_choice == "Dark")
+            st.rerun()
 
         st.divider()
 
