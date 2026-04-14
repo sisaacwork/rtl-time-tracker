@@ -3282,15 +3282,12 @@ def view_building_kpis():
             hovertemplate="<b>%{label}</b><br>%{value:,} (%{percent})<extra></extra>",
             hole=0.35,
         ))
-        fig.update_layout(
-            **_chart_base(title=dict(text=title, font=dict(size=14, color=c["text"]))),
+        fig.update_layout(**_chart_base(
+            title=dict(text=title, font=dict(size=14, color=c["text"])),
             height=340,
-            legend=dict(
-                bgcolor="rgba(0,0,0,0)",
-                font=dict(color=c["text"], size=11),
-            ),
+            legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=c["text"], size=11)),
             showlegend=True,
-        )
+        ))
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     pie_col1, pie_col2 = st.columns(2)
