@@ -2271,6 +2271,23 @@ def view_content_kpis():
 
     # ── Add / Edit Project Form ───────────────────────────────────────────────
     edit_id = st.session_state.get("cp_edit_id", None)
+
+    # When the edit target changes, wipe all form widget keys so Streamlit
+    # will honour the value= parameters we pass to each widget below.
+    _prev = st.session_state.get("_cp_prev_edit_id", "UNSET")
+    if _prev != edit_id:
+        for _k in [
+            "cp_title", "cp_type", "cp_pillar", "cp_code", "cp_owner",
+            "cp_sponsored", "cp_spons_type", "cp_spons_other", "cp_conf_pend",
+            "cp_status", "cp_format", "cp_generator", "cp_committee",
+            "cp_funding", "cp_partner_name", "cp_budget", "cp_hours",
+            "cp_draft_del", "cp_draft_com", "cp_draft_cpd",
+            "cp_lay1_del", "cp_lay1_com", "cp_lay2_del", "cp_lay2_apr",
+            "cp_print", "cp_golive", "cp_notes", "cp_pct_override",
+        ]:
+            st.session_state.pop(_k, None)
+        st.session_state["_cp_prev_edit_id"] = edit_id
+
     edit_proj = {}
     if edit_id is not None and not projects.empty:
         matches = projects[projects["id"] == edit_id]
