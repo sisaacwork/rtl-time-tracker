@@ -2503,9 +2503,35 @@ def view_content_kpis():
         def _fmt_date(d):
             return d.isoformat() if d else ""
 
-        # ── Save button ───────────────────────────────────────────────────────
+        # ── Save / Delete buttons ─────────────────────────────────────────────
         save_label = "Update Project" if edit_id else "Add Project"
-        if st.button(save_label, type="primary", use_container_width=True):
+        if edit_id:
+            btn_save_col, btn_del_col = st.columns([3, 1])
+            do_save   = btn_save_col.button(save_label, type="primary", use_container_width=True)
+            do_delete = btn_del_col.button("Delete", type="secondary", use_container_width=True)
+        else:
+            do_save   = st.button(save_label, type="primary", use_container_width=True)
+            do_delete = False
+
+        if do_delete and edit_id:
+            updated = projects[projects["id"] != edit_id]
+            custom_pillars = [p for p in all_pillars if p not in DEFAULT_PILLARS]
+            extra_codes    = {k: v for k, v in all_codes.items()
+                              if k not in CONTENT_ACCT_CODES}
+            ok, msg = save_content_projects(
+                updated,
+                {"rtl_hourly_rate": rate},
+                custom_pillars,
+                extra_codes,
+            )
+            if ok:
+                st.session_state.pop("cp_edit_sel", None)
+                st.toast(f"Deleted '{edit_proj.get('title', '')}'.")
+                st.rerun()
+            else:
+                st.error(msg)
+
+        if do_save:
             if not cp_title.strip():
                 st.error("Project title is required.")
             else:
@@ -2852,29 +2878,6 @@ def view_content_kpis():
             pc   = _pillar_color(proj.get("pillar", ""))
             with cols[col_idx]:
                 st.markdown(_project_card_html(proj, pc), unsafe_allow_html=True)
-                btn1, btn2 = st.columns(2)
-                if btn1.button("Edit", key=f"cp_edit_{proj['id']}", use_container_width=True):
-                    # Point the edit selector to this project; page scrolls to top
-                    st.session_state["cp_edit_sel"] = (
-                        f"{proj['title']} (#{int(proj['id'])})"
-                    )
-                    st.rerun()
-                if btn2.button("Delete", key=f"cp_del_{proj['id']}", use_container_width=True):
-                    updated = projects[projects["id"] != proj["id"]]
-                    custom_pillars = [p for p in all_pillars if p not in DEFAULT_PILLARS]
-                    extra_codes    = {k: v for k, v in all_codes.items()
-                                      if k not in CONTENT_ACCT_CODES}
-                    ok, msg = save_content_projects(
-                        updated,
-                        {"rtl_hourly_rate": rate},
-                        custom_pillars,
-                        extra_codes,
-                    )
-                    if ok:
-                        st.toast(f"Deleted '{proj.get('title', '')}'.")
-                        st.rerun()
-                    else:
-                        st.error(msg)
 
     # ── Global Settings (bottom of page) ─────────────────────────────────────
     st.divider()
