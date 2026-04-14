@@ -14,3 +14,5 @@ __pycache__/
 
 # Sync log
 rtl_sync.log
+.streamlit/secrets.toml.template
+.streamlit/secrets.toml.template
