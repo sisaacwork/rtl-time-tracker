@@ -3019,7 +3019,7 @@ def view_landing():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# VIEW: BUILDING KPIs
+# VIEW: DATABASE KPIs
 # ══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_resource(show_spinner=False)
@@ -3261,6 +3261,96 @@ def view_building_kpis():
     # ══════════════════════════════════════════════════════════════════════════
     st.markdown("### Buildings")
 
+    # ── Progress to Goal (pie) ────────────────────────────────────────────────
+    ANNUAL_GOALS = {
+        2026: 47_250,
+        2027: 49_000,
+        2028: 51_000,
+        2029: 53_250,
+        2030: 55_750,
+    }
+    goal_year = date.today().year
+    if goal_year in ANNUAL_GOALS:
+        goal_target = ANNUAL_GOALS[goal_year]
+        jan1 = f"{goal_year}-01-01"
+
+        # Count buildings as of Jan 1 (for label), and current live total for % to goal
+        df_jan1 = _bldg_query(f"""
+            SELECT COUNT(*) AS total
+            FROM   ctbuh_building b
+            WHERE  b.deleted_at IS NULL
+              AND  b.date_create <= '{jan1}'
+        """)
+        df_goal = _bldg_query("""
+            SELECT COUNT(*) AS total
+            FROM   ctbuh_building b
+            WHERE  b.deleted_at IS NULL
+        """)
+
+        if not df_goal.empty and not df_jan1.empty:
+            jan1_count = int(df_jan1["total"].iloc[0])
+            current    = int(df_goal["total"].iloc[0])
+            remaining  = max(goal_target - current, 0)
+            year_gap   = goal_target - jan1_count
+            gained     = current - jan1_count
+            pct        = round(gained / year_gap * 100, 1) if year_gap > 0 else 100.0
+
+            goal_col1, goal_col2 = st.columns([1, 2])
+            with goal_col1:
+                PALETTE_GOAL = ["#B4E817", "#333333"]
+                fig_goal = go.Figure(go.Pie(
+                    labels=["Progress this year", "Remaining to goal"],
+                    values=[gained, max(year_gap - gained, 0)],
+                    marker=dict(colors=PALETTE_GOAL),
+                    textinfo="none",
+                    hovertemplate="<b>%{label}</b><br>%{value:,}<extra></extra>",
+                    hole=0.5,
+                ))
+                fig_goal.add_annotation(
+                    text=f"<b>{pct}%</b>",
+                    x=0.5, y=0.5,
+                    font=dict(size=22, color=c["text"]),
+                    showarrow=False,
+                )
+                fig_goal.update_layout(**_chart_base(
+                    title=dict(
+                        text=f"{goal_year} Progress to Goal ({goal_target:,} buildings)",
+                        font=dict(size=14, color=c["text"]),
+                    ),
+                    height=340,
+                    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=c["text"], size=11)),
+                    showlegend=True,
+                ))
+                st.plotly_chart(fig_goal, use_container_width=True,
+                                config={"displayModeBar": False})
+            with goal_col2:
+                st.markdown(
+                    f"""
+                    <div style='padding:24px 0 0 16px; color:{c["text"]}'>
+                        <p style='font-size:15px; margin-bottom:6px'>
+                            <b>Buildings as of Jan 1, {goal_year}:</b> {jan1_count:,}
+                        </p>
+                        <p style='font-size:15px; margin-bottom:6px'>
+                            <b>Current buildings:</b> {current:,}
+                        </p>
+                        <p style='font-size:15px; margin-bottom:6px'>
+                            <b>{goal_year} target:</b> {goal_target:,}
+                        </p>
+                        <p style='font-size:15px; margin-bottom:6px'>
+                            <b>Remaining:</b> {remaining:,}
+                        </p>
+                        <p style='font-size:18px; margin-top:12px'>
+                            <b>{pct}% to goal</b>
+                        </p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+    else:
+        st.info(f"No goal defined for {goal_year}.")
+
+    st.divider()
+
     # ── 5. Buildings by function (pie) ────────────────────────────────────────
     # main_use_01/02 are enums — use exact value matching
     df_func = _bldg_query(f"""
@@ -3397,7 +3487,7 @@ def main():
             st.divider()
             kpi_mode = st.radio(
                 "KPI Module",
-                options=["Time KPIs", "Financial KPIs", "Content KPIs", "Building KPIs"],
+                options=["Time KPIs", "Financial KPIs", "Content KPIs", "Database KPIs"],
                 key="admin_kpi_mode",
             )
             st.divider()
@@ -3430,7 +3520,7 @@ def main():
             st.title("Content KPIs")
             view_content_kpis()
         else:
-            st.title("Building KPIs")
+            st.title("Database KPIs")
             view_building_kpis()
         return
 
