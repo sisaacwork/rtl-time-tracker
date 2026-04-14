@@ -1476,7 +1476,7 @@ def view_team(df: pd.DataFrame):
     # ─────────────────────────────────────────────────────────────────────────
     st.markdown("##### Estimated Cost by Category")
 
-    BLENDED_RATE = 85.0   # $/hr — update this to reflect your actual blended rate
+    BLENDED_RATE = 91.03   # $/hr — update this to reflect your actual blended rate
 
     cost_df = fdf.groupby("category")["hours"].sum().reset_index()
     cost_df["est_cost"] = cost_df["hours"] * BLENDED_RATE
