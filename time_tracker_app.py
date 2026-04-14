@@ -52,25 +52,35 @@ CVU_PALETTE = [
     "#FA3F26",
 ]
 
-# ── Module-level base CSS ─────────────────────────────────────────────────────
-# This runs before main() so the dark background loads instantly on every
-# page render, before Streamlit's React app can inject its own theme.
-# _inject_css() inside main() then handles the full theme (dark vs light).
+# ── Minimal global styles ─────────────────────────────────────────────────────
+# Page background, text, and widget colours come from .streamlit/config.toml.
+# Only inject what config.toml can't express: the Inter web font, metric card
+# accent border, and the category-header chip used in daily entry.
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-html, body,
-html body .stApp,
-html body [data-testid="stAppViewContainer"],
-html body [data-testid="stAppViewContainer"] > section,
-html body section[data-testid="stMain"],
-html body section[data-testid="stMain"] > div,
-html body [data-testid="block-container"],
-html body div.block-container {
-    background-color: #171717 !important;
-    background: #171717 !important;
-    color: #FCFCFC !important;
+
+html, body, .stApp {
     font-family: 'Inter', Arial, sans-serif !important;
+}
+
+/* Metric card — left accent stripe */
+div[data-testid="stMetric"] {
+    border-radius: 6px;
+    padding: 12px 16px;
+    border-left: 3px solid var(--primary-color, #B4E817);
+}
+
+/* Category section header chip in daily entry */
+.cat-header {
+    border-left: 3px solid var(--primary-color, #B4E817);
+    padding: 6px 12px;
+    border-radius: 0 4px 4px 0;
+    font-weight: 600;
+    font-size: 0.88rem;
+    letter-spacing: 0.03em;
+    margin-top: 14px;
+    margin-bottom: 4px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1872,291 +1882,16 @@ def view_landing():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CSS INJECTION  (adapts to dark / light toggle)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _inject_css(dark_mode: bool):
-    """
-    Inject a complete CSS theme into the page.
-    The sidebar is always dark (CVU brand element).
-    The main content area switches between dark and light.
-    """
-    if dark_mode:
-        bg          = "#171717"
-        card_bg     = "#282828"
-        text        = "#FCFCFC"
-        sub_text    = "#9E9E9E"
-        border      = "#4F4F4F"
-        input_bg    = "#282828"
-        btn2_bg     = "#282828"
-        btn2_text   = "#FCFCFC"
-        btn2_border = "#4F4F4F"
-        accent      = "#B4E817"    # Volt Green on dark
-        tab_idle    = "#9E9E9E"
-        caption_col = "#9E9E9E"
-    else:
-        bg          = "#F5F5F5"
-        card_bg     = "#E8E8E8"
-        text        = "#1A1A1A"
-        sub_text    = "#555555"
-        border      = "#CCCCCC"
-        input_bg    = "#FFFFFF"
-        btn2_bg     = "#E8E8E8"
-        btn2_text   = "#1A1A1A"
-        btn2_border = "#CCCCCC"
-        accent      = "#66CC00"    # Volt Green variant — readable on light
-        tab_idle    = "#666666"
-        caption_col = "#666666"
-
-    st.markdown(f"""
-<style>
-/* ════════════════════════════════════════════════════════════════
-   MAIN CONTENT — use html body prefix for higher specificity
-   so we beat Streamlit's own theme injection
-   ════════════════════════════════════════════════════════════════ */
-
-html, body {{
-    font-family: 'Inter', Arial, sans-serif !important;
-    background: {bg} !important;
-    background-color: {bg} !important;
-    color: {text} !important;
-}}
-
-/* Chain html + body to raise specificity above Streamlit's :root vars */
-html body .stApp,
-html body .stApp > header,
-html body [data-testid="stAppViewContainer"],
-html body [data-testid="stAppViewContainer"] > section,
-html body section[data-testid="stMain"],
-html body section[data-testid="stMain"] > div,
-html body [data-testid="block-container"],
-html body div.block-container,
-html body section.main,
-html body .main,
-html body .main > div {{
-    background: {bg} !important;
-    background-color: {bg} !important;
-    color: {text} !important;
-    font-family: 'Inter', Arial, sans-serif !important;
-}}
-
-/* ── All text in main content ── */
-html body .stApp p,
-html body .stApp span,
-html body .stApp label,
-html body .stApp div,
-html body .stApp li,
-html body .stApp a,
-html body .stApp h1,
-html body .stApp h2,
-html body .stApp h3,
-html body .stApp h4,
-html body .stApp h5,
-html body .stApp h6,
-html body .stApp [data-testid="stMarkdownContainer"],
-html body .stApp [data-testid="stText"] {{
-    color: {text} !important;
-}}
-
-/* ── Caption / secondary text ── */
-html body .stApp [data-testid="stCaptionContainer"],
-html body .stApp .stCaption,
-html body .stApp small {{
-    color: {caption_col} !important;
-}}
-
-/* ── Text / number / date inputs ── */
-html body [data-testid="stTextInput"] input,
-html body [data-testid="stNumberInput"] input,
-html body [data-testid="stDateInput"] input,
-html body [data-testid="stTextArea"] textarea {{
-    background: {input_bg} !important;
-    background-color: {input_bg} !important;
-    color: {text} !important;
-    border-color: {border} !important;
-}}
-
-/* ── Selectboxes & dropdowns ── */
-html body [data-baseweb="select"] > div,
-html body [data-baseweb="select"] * {{
-    background: {input_bg} !important;
-    background-color: {input_bg} !important;
-    color: {text} !important;
-    border-color: {border} !important;
-}}
-html body [data-baseweb="popover"],
-html body [data-baseweb="menu"],
-html body [role="listbox"],
-html body [role="option"] {{
-    background: {input_bg} !important;
-    background-color: {input_bg} !important;
-    color: {text} !important;
-}}
-
-/* ── Expanders ── */
-html body [data-testid="stExpander"],
-html body [data-testid="stExpander"] summary,
-html body [data-testid="stExpander"] > div {{
-    background: {card_bg} !important;
-    background-color: {card_bg} !important;
-    border-color: {border} !important;
-    color: {text} !important;
-}}
-
-/* ── Radio & checkbox (main content) ── */
-html body [data-testid="stRadio"],
-html body [data-testid="stRadio"] label,
-html body [data-testid="stRadio"] div,
-html body [data-testid="stCheckbox"] label,
-html body [data-testid="stCheckbox"] div {{
-    color: {text} !important;
-    background-color: transparent !important;
-}}
-
-/* ── Data editor ── */
-html body [data-testid="stDataFrameResizable"],
-html body [data-testid="data-grid-canvas"],
-html body .dvn-scroller {{
-    background: {card_bg} !important;
-    background-color: {card_bg} !important;
-}}
-
-/* ── Dividers ── */
-html body hr {{ border-color: {border} !important; }}
-
-/* ── Metric cards ── */
-html body div[data-testid="stMetric"] {{
-    background: {card_bg} !important;
-    background-color: {card_bg} !important;
-    border-radius: 6px;
-    padding: 12px 16px;
-    border-left: 3px solid {accent};
-}}
-html body div[data-testid="stMetric"] label,
-html body div[data-testid="stMetric"] p,
-html body div[data-testid="stMetric"] span,
-html body div[data-testid="stMetric"] div,
-html body div[data-testid="stMetric"] [data-testid="stMetricValue"],
-html body div[data-testid="stMetric"] [data-testid="stMetricLabel"],
-html body div[data-testid="stMetric"] [data-testid="stMetricDelta"] {{
-    color: {text} !important;
-}}
-
-/* ── Tab active indicator ── */
-html body div[data-testid="stTabs"] button[aria-selected="true"] {{
-    color: {accent} !important;
-    border-bottom-color: {accent} !important;
-}}
-html body div[data-testid="stTabs"] button {{
-    color: {tab_idle} !important;
-    background-color: transparent !important;
-}}
-
-/* ── Primary buttons ── */
-html body .stButton > button[kind="primary"] {{
-    background: {accent} !important;
-    background-color: {accent} !important;
-    color: #171717 !important;
-    font-weight: 600;
-    border: none;
-    font-family: 'Inter', Arial, sans-serif;
-}}
-html body .stButton > button[kind="primary"]:hover {{
-    filter: brightness(1.1);
-    color: #171717 !important;
-}}
-
-/* ── Secondary buttons ── */
-html body .stButton > button:not([kind="primary"]) {{
-    background: {btn2_bg} !important;
-    background-color: {btn2_bg} !important;
-    color: {btn2_text} !important;
-    border-color: {btn2_border} !important;
-}}
-
-/* ── Category section headers ── */
-html body .cat-header {{
-    background: {card_bg} !important;
-    background-color: {card_bg} !important;
-    border-left: 3px solid {accent};
-    padding: 6px 12px;
-    border-radius: 0 4px 4px 0;
-    font-weight: 600;
-    color: {text} !important;
-    font-size: 0.88rem;
-    letter-spacing: 0.03em;
-    margin-top: 14px;
-    margin-bottom: 4px;
-}}
-
-/* ════════════════════════════════════════════════════════════════
-   SIDEBAR — always dark, full specificity chain
-   ════════════════════════════════════════════════════════════════ */
-
-html body section[data-testid="stSidebar"],
-html body section[data-testid="stSidebar"] > div,
-html body section[data-testid="stSidebar"] > div > div {{
-    background: #171717 !important;
-    background-color: #171717 !important;
-    border-right: 1px solid #282828;
-}}
-
-/* All text in sidebar */
-html body section[data-testid="stSidebar"] p,
-html body section[data-testid="stSidebar"] span,
-html body section[data-testid="stSidebar"] label,
-html body section[data-testid="stSidebar"] div,
-html body section[data-testid="stSidebar"] h1,
-html body section[data-testid="stSidebar"] h2,
-html body section[data-testid="stSidebar"] h3 {{
-    color: #FCFCFC !important;
-}}
-
-/* Sidebar inner widget containers — transparent so #171717 shows */
-html body section[data-testid="stSidebar"] > div > div > div,
-html body section[data-testid="stSidebar"] [data-testid="stRadio"],
-html body section[data-testid="stSidebar"] [data-testid="stRadio"] > div,
-html body section[data-testid="stSidebar"] [data-baseweb="radio-group"],
-html body section[data-testid="stSidebar"] [role="radiogroup"],
-html body section[data-testid="stSidebar"] label[data-baseweb="radio"],
-html body section[data-testid="stSidebar"] [data-testid="stCheckbox"],
-html body section[data-testid="stSidebar"] .element-container,
-html body section[data-testid="stSidebar"] .stRadio,
-html body section[data-testid="stSidebar"] .stCheckbox {{
-    background: transparent !important;
-    background-color: transparent !important;
-}}
-
-/* Sidebar buttons — explicitly dark */
-html body section[data-testid="stSidebar"] button,
-html body section[data-testid="stSidebar"] .stButton > button {{
-    background: #282828 !important;
-    background-color: #282828 !important;
-    border-color: #4F4F4F !important;
-    color: #FCFCFC !important;
-}}
-
-/* Sidebar selectboxes */
-html body section[data-testid="stSidebar"] [data-baseweb="select"] > div,
-html body section[data-testid="stSidebar"] [data-baseweb="select"] * {{
-    background: #282828 !important;
-    background-color: #282828 !important;
-    color: #FCFCFC !important;
-    border-color: #4F4F4F !important;
-}}
-</style>
-""", unsafe_allow_html=True)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR + MAIN APP
 # ══════════════════════════════════════════════════════════════════════════════
 
 def main():
     # ── Theme — must be first so CSS is injected before any content ───────────
+    # ── Chart colour mode — dark by default, matches CVU brand ───────────────
+    # Streamlit's own theme (from config.toml) handles page bg / widget colours.
+    # This flag only controls Plotly chart colours (axis text, grid, plot_bg).
     if "dark_mode" not in st.session_state:
         st.session_state["dark_mode"] = True
-    _inject_css(st.session_state["dark_mode"])
 
     # ── Auth gate ─────────────────────────────────────────────────────────────
     if not _check_auth():
@@ -2177,17 +1912,15 @@ def main():
                 key="admin_kpi_mode",
             )
             st.divider()
-            # ── Theme toggle ──────────────────────────────────────────────────
-            theme_choice = st.radio(
-                "Theme",
+            # ── Chart colour toggle ───────────────────────────────────────────
+            chart_mode = st.radio(
+                "Chart Colors",
                 options=["Dark", "Light"],
                 index=0 if st.session_state["dark_mode"] else 1,
-                key="admin_theme_radio",
+                key="admin_chart_mode",
                 horizontal=True,
             )
-            if (theme_choice == "Dark") != st.session_state["dark_mode"]:
-                st.session_state["dark_mode"] = (theme_choice == "Dark")
-                st.rerun()
+            st.session_state["dark_mode"] = (chart_mode == "Dark")
             st.divider()
             if st.button("Refresh Data", use_container_width=True):
                 load_all.clear()
@@ -2230,17 +1963,15 @@ def main():
 
         st.divider()
 
-        # ── Theme toggle ──────────────────────────────────────────────────────
-        theme_choice = st.radio(
-            "Theme",
+        # ── Chart colour toggle ───────────────────────────────────────────────
+        chart_mode = st.radio(
+            "Chart Colors",
             options=["Dark", "Light"],
             index=0 if st.session_state["dark_mode"] else 1,
-            key="staff_theme_radio",
+            key="staff_chart_mode",
             horizontal=True,
         )
-        if (theme_choice == "Dark") != st.session_state["dark_mode"]:
-            st.session_state["dark_mode"] = (theme_choice == "Dark")
-            st.rerun()
+        st.session_state["dark_mode"] = (chart_mode == "Dark")
 
         st.divider()
 
