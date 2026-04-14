@@ -3050,10 +3050,13 @@ def _bldg_query(sql: str) -> pd.DataFrame:
     if conn is None:
         return pd.DataFrame()
     try:
-        # Reconnect if the connection dropped
         if not conn.is_connected():
             conn.reconnect(attempts=2, delay=1)
-        return pd.read_sql(sql, conn)
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+        cursor.close()
+        return pd.DataFrame(rows) if rows else pd.DataFrame()
     except Exception as e:
         st.error(f"Database query failed: {e}")
         return pd.DataFrame()
@@ -3110,8 +3113,8 @@ def view_building_kpis():
             marker=dict(size=4, color=color),
             hovertemplate="%{x|%b %Y}: <b>%{y:,}</b><extra></extra>",
         ))
-        fig.update_layout(
-            **_chart_base(title=dict(text=title, font=dict(size=14, color=c["text"]))),
+        fig.update_layout(**_chart_base(
+            title=dict(text=title, font=dict(size=14, color=c["text"])),
             height=280,
             xaxis=dict(
                 gridcolor=c["grid"], zerolinecolor=c["grid"],
@@ -3123,7 +3126,7 @@ def view_building_kpis():
                 tickfont=dict(color=c["subtext"], size=11),
                 tickformat=",d",
             ),
-        )
+        ))
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # ── 1. New buildings added ────────────────────────────────────────────────
