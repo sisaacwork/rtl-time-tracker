@@ -3149,6 +3149,7 @@ def view_building_kpis():
         WHERE  h.model_type = 'Building'
           AND  h.type = 'Update'
           AND  h.created_at >= '{START}'
+          AND  DATE_FORMAT(h.created_at, '%Y-%m') NOT IN ('2021-06', '2022-10')
         GROUP  BY month
         ORDER  BY month
     """)
@@ -3165,7 +3166,7 @@ def view_building_kpis():
         ORDER  BY month
     """)
 
-    # ── 4. Net company connections ────────────────────────────────────────────
+    # ── 4. New company connections ────────────────────────────────────────────
     df_companies = _bldg_query(f"""
         SELECT DATE_FORMAT(h.created_at, '%Y-%m') AS month,
                SUM(CASE WHEN h.type = 'attach_company' THEN 1 ELSE -1 END) AS count
@@ -3183,7 +3184,7 @@ def view_building_kpis():
         _monthly_line(df_images,    "count", "New Images Added")
     with col2:
         _monthly_line(df_updates,   "count", "Building Updates")
-        _monthly_line(df_companies, "count", "Net Company Connections")
+        _monthly_line(df_companies, "count", "New Company Connections")
 
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 2 — BUILDINGS
