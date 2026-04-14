@@ -239,7 +239,7 @@ PROJECTS_COLS = [
     "draft_delivered", "draft_commented", "draft_completed",
     "layout1_delivered", "layout1_commented", "layout2_delivered", "layout2_approved",
     "print_date", "go_live_date",
-    "notes", "pct_override",
+    "notes", "pct_override", "confirmed_pending",
 ]
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -571,6 +571,7 @@ def save_content_projects(
             str(row.get("go_live_date",       "") or ""),
             str(row.get("notes",              "") or ""),
             float(row.get("pct_override", 0.0) or 0.0),
+            str(row.get("confirmed_pending", "Confirmed") or "Confirmed"),
         ])
 
     ws_s = wb.create_sheet("settings")
@@ -2085,6 +2086,47 @@ def _progress_from_override(pct: int):
     return pct, p1, p2, p3
 
 
+def _next_milestone(proj: dict):
+    """
+    Return (date_str, display_name) for the earliest future milestone,
+    or None if no upcoming dates are set.
+    Respects format: print_date excluded for Digital, go_live_date excluded for Print.
+    """
+    fmt = str(proj.get("format", "TBD"))
+    candidates = [
+        ("draft_delivered",   "Draft delivered"),
+        ("draft_commented",   "Draft commented"),
+        ("draft_completed",   "Draft completed"),
+        ("layout1_delivered", "Layout 1 delivered"),
+        ("layout1_commented", "Layout 1 commented"),
+        ("layout2_delivered", "Layout 2 delivered"),
+        ("layout2_approved",  "Layout 2 approved"),
+    ]
+    if fmt != "Digital":
+        candidates.append(("print_date",  "Sent to printer"))
+    if fmt != "Print":
+        candidates.append(("go_live_date", "Go-live"))
+
+    today = date.today()
+    upcoming = []
+    for key, label in candidates:
+        v = proj.get(key, "")
+        if not v or str(v) in ("", "None", "NaT", "nan"):
+            continue
+        try:
+            d = date.fromisoformat(str(v)[:10])
+            if d > today:
+                upcoming.append((d, label))
+        except (ValueError, TypeError):
+            continue
+
+    if not upcoming:
+        return None
+    upcoming.sort(key=lambda x: x[0])
+    d, label = upcoming[0]
+    return d.isoformat(), label
+
+
 def _pillar_color(pillar: str) -> str:
     return PILLAR_COLORS.get(pillar, DEFAULT_PILLAR_COLOR)
 
@@ -2108,22 +2150,37 @@ def _project_card_html(proj: dict, pillar_color: str) -> str:
         total, p1, p2, p3 = _content_progress(proj)
         manual_label = ""
 
-    title    = proj.get("title",    "Untitled")
-    status   = proj.get("status",   "")
-    pillar   = proj.get("pillar",   "")
-    fmt      = proj.get("format",   "")
-    owner    = proj.get("owner",    "")
-    ptype    = proj.get("type",     "")
-    acct     = proj.get("acct_code","")
-    budget   = proj.get("budget",    0.0) or 0.0
-    hours    = proj.get("est_hours", 0.0) or 0.0
+    title      = proj.get("title",            "Untitled")
+    status     = proj.get("status",           "")
+    conf_pend  = proj.get("confirmed_pending","Confirmed") or "Confirmed"
+    pillar     = proj.get("pillar",           "")
+    fmt        = proj.get("format",           "")
+    owner      = proj.get("owner",            "")
+    ptype      = proj.get("type",             "")
+    acct       = proj.get("acct_code",        "")
+    budget     = proj.get("budget",    0.0) or 0.0
+    hours      = proj.get("est_hours", 0.0) or 0.0
 
-    budget_str = f"${float(budget):,.0f}" if budget else "—"
-    hours_str  = f"{float(hours):,.0f} hrs" if hours else "—"
+    budget_str  = f"${float(budget):,.0f}" if budget else "—"
+    hours_str   = f"{float(hours):,.0f} hrs" if hours else "—"
+    is_pending  = (conf_pend == "Pending")
+    italic_style = "font-style:italic;" if is_pending else ""
+    status_line  = f"{conf_pend}, {status}" if status else conf_pend
+
+    next_ms = _next_milestone(proj)
+    if next_ms:
+        next_date, next_name = next_ms
+        next_html = (
+            f"<span style='font-size:0.72rem;font-weight:400;"
+            f"color:#9E9E9E;margin-left:10px;font-style:normal'>"
+            f"Next: {next_date}, {next_name}</span>"
+        )
+    else:
+        next_html = ""
 
     return f"""
 <div style="background:#282828;border-radius:8px;padding:18px 20px 14px;
-            border-left:4px solid {pillar_color};margin-bottom:4px">
+            border-left:4px solid {pillar_color};margin-bottom:4px;{italic_style}">
 
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px">
     <span style="font-size:1.05rem;font-weight:700;color:#FCFCFC;
@@ -2131,12 +2188,12 @@ def _project_card_html(proj: dict, pillar_color: str) -> str:
     <span style="background:{pillar_color}22;color:{pillar_color};
                  border:1px solid {pillar_color}55;border-radius:10px;
                  font-size:0.68rem;font-weight:600;padding:2px 8px;
-                 white-space:nowrap;flex-shrink:0">{pillar}</span>
+                 white-space:nowrap;flex-shrink:0;font-style:normal">{pillar}</span>
   </div>
 
-  <div style="font-size:0.82rem;color:#C5C5C5;margin-bottom:6px">{status}</div>
+  <div style="font-size:0.82rem;color:#C5C5C5;margin-bottom:6px">{status_line}</div>
   <div style="font-size:0.9rem;font-weight:700;color:#B4E817;margin-bottom:10px">
-    {total}% complete{manual_label}
+    {total}% complete{manual_label}{next_html}
   </div>
 
   <!-- Progress bar: 3 phase segments (widths 30% / 60% / 10%) -->
@@ -2246,8 +2303,15 @@ def view_content_kpis():
                     value=str(edit_proj.get("sponsorship_other", "") or ""),
                 )
 
-        # Row 4: Status | Format | Content Generator
-        h1, h2, h3 = st.columns(3)
+        # Row 4: Confirmed/Pending | Status | Format | Content Generator
+        h0, h1, h2, h3 = st.columns(4)
+        cp_conf_pend = h0.selectbox(
+            "Confirmed/Pending",
+            ["Confirmed", "Pending"],
+            key="cp_conf_pend",
+            index=_idx(["Confirmed", "Pending"],
+                       edit_proj.get("confirmed_pending", "Confirmed")),
+        )
         cp_status    = h1.selectbox("Status", PROJECT_STATUSES, key="cp_status",
                                     index=_idx(PROJECT_STATUSES, edit_proj.get("status")))
         cp_format    = h2.selectbox("Format", FORMAT_TYPES, key="cp_format",
@@ -2418,6 +2482,7 @@ def view_content_kpis():
                     "go_live_date":         _fmt_date(cp_go_live)    if cp_go_live    else "",
                     "notes":                cp_notes,
                     "pct_override":         cp_pct_override,
+                    "confirmed_pending":    cp_conf_pend,
                 }
                 new_df = pd.DataFrame([new_row])
                 if edit_id:
@@ -2463,19 +2528,54 @@ def view_content_kpis():
     key_html += "</div>"
     st.markdown(key_html, unsafe_allow_html=True)
 
-    # Filter bar
+    # Filter + sort bar
     st.markdown("##### Projects")
-    fa, fb, fc = st.columns(3)
+    fa, fb, fc, fd = st.columns(4)
     f_pillar = fa.selectbox("Filter: Pillar",  ["All"] + all_pillars,      key="cp_f_pillar")
     f_status = fb.selectbox("Filter: Status",  ["All"] + PROJECT_STATUSES, key="cp_f_status")
     f_owner  = fc.selectbox("Filter: Owner",   ["All"] + RTL_OWNERS,       key="cp_f_owner")
+    sort_by  = fd.selectbox(
+        "Sort by",
+        ["Date added", "% Complete (high–low)", "% Complete (low–high)",
+         "Go-live (soonest)", "Go-live (latest)"],
+        key="cp_sort_by",
+    )
 
     mask = pd.Series(True, index=projects.index)
     if f_pillar != "All": mask &= projects["pillar"] == f_pillar
     if f_status != "All": mask &= projects["status"] == f_status
     if f_owner  != "All": mask &= projects["owner"]  == f_owner
 
-    visible = projects[mask].reset_index(drop=True)
+    visible = projects[mask].copy()
+
+    # Compute % complete for sorting (respects manual override)
+    def _row_pct(row):
+        try:
+            ov = int(float(row.get("pct_override", 0) or 0))
+        except (ValueError, TypeError):
+            ov = 0
+        if ov > 0:
+            return ov
+        total, _, _, _ = _content_progress(row)
+        return total
+
+    if sort_by == "% Complete (high–low)":
+        visible["_pct"] = visible.apply(_row_pct, axis=1)
+        visible = visible.sort_values("_pct", ascending=False)
+    elif sort_by == "% Complete (low–high)":
+        visible["_pct"] = visible.apply(_row_pct, axis=1)
+        visible = visible.sort_values("_pct", ascending=True)
+    elif sort_by in ("Go-live (soonest)", "Go-live (latest)"):
+        visible["_go_live_sort"] = pd.to_datetime(
+            visible["go_live_date"], errors="coerce"
+        )
+        visible = visible.sort_values(
+            "_go_live_sort",
+            ascending=(sort_by == "Go-live (soonest)"),
+            na_position="last",
+        )
+
+    visible = visible.reset_index(drop=True)
     if visible.empty:
         st.info("No projects match the current filters.")
         return
