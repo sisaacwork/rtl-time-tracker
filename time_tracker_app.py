@@ -64,8 +64,9 @@ html, body, .stApp {
     font-family: 'Inter', Arial, sans-serif !important;
 }
 
-/* Metric card — left accent stripe */
+/* Metric card — dark card background + left accent stripe */
 div[data-testid="stMetric"] {
+    background-color: #282828 !important;
     border-radius: 6px;
     padding: 12px 16px;
     border-left: 3px solid var(--primary-color, #B4E817);
