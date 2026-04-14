@@ -90,6 +90,16 @@ div[data-testid="stButton"] > button[kind="primary"],
 div[data-testid="stFormSubmitButton"] > button[kind="primary"] {
     color: #171717 !important;
 }
+
+/* Multiselect tag bubbles: dark text on lime-green background */
+span[data-baseweb="tag"] {
+    color: #171717 !important;
+}
+span[data-baseweb="tag"] span,
+span[data-baseweb="tag"] svg {
+    color: #171717 !important;
+    fill: #171717 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
