@@ -2810,6 +2810,54 @@ def view_content_kpis():
                 btn1, btn2 = st.columns(2)
                 if btn1.button("Edit", key=f"cp_edit_{proj['id']}", use_container_width=True):
                     st.session_state["cp_edit_id"] = int(proj["id"])
+
+                    # Explicitly write every form field into session_state so
+                    # Streamlit doesn't reuse stale values from a previous form use.
+                    def _dv_edit(key):
+                        v = proj.get(key, "")
+                        if not v or str(v) in ("", "None", "NaT", "nan"):
+                            return None
+                        try:
+                            return date.fromisoformat(str(v)[:10])
+                        except (ValueError, TypeError):
+                            return None
+
+                    code_val   = str(proj.get("acct_code", "") or "")
+                    code_opts  = [f"{k} — {v}" for k, v in all_codes.items()]
+                    code_label = next(
+                        (o for o in code_opts if o.startswith(code_val + " —")),
+                        code_opts[0] if code_opts else "",
+                    )
+
+                    st.session_state["cp_title"]        = str(proj.get("title",              "") or "")
+                    st.session_state["cp_type"]         = str(proj.get("type",               CONTENT_TYPES[0])     or CONTENT_TYPES[0])
+                    st.session_state["cp_pillar"]       = str(proj.get("pillar",             all_pillars[0])       or all_pillars[0])
+                    st.session_state["cp_code"]         = code_label
+                    st.session_state["cp_owner"]        = str(proj.get("owner",              RTL_OWNERS[0])        or RTL_OWNERS[0])
+                    st.session_state["cp_sponsored"]    = str(proj.get("sponsored",          "No")                 or "No")
+                    st.session_state["cp_spons_type"]   = str(proj.get("sponsorship_type",   SPONSORSHIP_TYPES[0]) or SPONSORSHIP_TYPES[0])
+                    st.session_state["cp_spons_other"]  = str(proj.get("sponsorship_other",  "") or "")
+                    st.session_state["cp_conf_pend"]    = str(proj.get("confirmed_pending",  "Confirmed")          or "Confirmed")
+                    st.session_state["cp_status"]       = str(proj.get("status",             PROJECT_STATUSES[0])  or PROJECT_STATUSES[0])
+                    st.session_state["cp_format"]       = str(proj.get("format",             FORMAT_TYPES[0])      or FORMAT_TYPES[0])
+                    st.session_state["cp_generator"]    = str(proj.get("content_generator",  CONTENT_GENERATORS[0])or CONTENT_GENERATORS[0])
+                    st.session_state["cp_committee"]    = str(proj.get("committee_name",     "") or "")
+                    st.session_state["cp_funding"]      = str(proj.get("funding_source",     FUNDING_SOURCES[0])   or FUNDING_SOURCES[0])
+                    st.session_state["cp_partner_name"] = str(proj.get("program_partner_name","") or "")
+                    st.session_state["cp_budget"]       = float(proj.get("budget",    0.0) or 0.0)
+                    st.session_state["cp_hours"]        = float(proj.get("est_hours", 0.0) or 0.0)
+                    st.session_state["cp_draft_del"]    = _dv_edit("draft_delivered")
+                    st.session_state["cp_draft_com"]    = _dv_edit("draft_commented")
+                    st.session_state["cp_draft_cpd"]    = _dv_edit("draft_completed")
+                    st.session_state["cp_lay1_del"]     = _dv_edit("layout1_delivered")
+                    st.session_state["cp_lay1_com"]     = _dv_edit("layout1_commented")
+                    st.session_state["cp_lay2_del"]     = _dv_edit("layout2_delivered")
+                    st.session_state["cp_lay2_apr"]     = _dv_edit("layout2_approved")
+                    st.session_state["cp_print"]        = _dv_edit("print_date")
+                    st.session_state["cp_golive"]       = _dv_edit("go_live_date")
+                    st.session_state["cp_notes"]        = str(proj.get("notes", "") or "")
+                    st.session_state["cp_pct_override"] = int(float(proj.get("pct_override", 0) or 0))
+
                     st.rerun()
                 if btn2.button("Delete", key=f"cp_del_{proj['id']}", use_container_width=True):
                     updated = projects[projects["id"] != proj["id"]]
