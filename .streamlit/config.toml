@@ -1,26 +1,11 @@
 [client]
 toolbarMode = "minimal"
 
-# ── Dark Theme (CVU brand) ────────────────────────────────────────────────────
-[theme.dark]
+# ── Single fixed theme — Streamlit ignores system preference and uses this ────
+[theme]
+base                     = "dark"
 backgroundColor          = "#171717"
 secondaryBackgroundColor = "#282828"
 textColor                = "#FCFCFC"
 primaryColor             = "#B4E817"
 font                     = "sans serif"
-
-[theme.dark.sidebar]
-backgroundColor          = "#171717"
-secondaryBackgroundColor = "#282828"
-
-# ── Light Theme (CVU brand adapted) ──────────────────────────────────────────
-[theme.light]
-backgroundColor          = "#F5F5F5"
-secondaryBackgroundColor = "#E8E8E8"
-textColor                = "#1A1A1A"
-primaryColor             = "#66CC00"
-font                     = "sans serif"
-
-[theme.light.sidebar]
-backgroundColor          = "#171717"
-secondaryBackgroundColor = "#282828"
