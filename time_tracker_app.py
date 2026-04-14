@@ -2021,8 +2021,14 @@ def _content_progress(row):
     fmt = str(row.get("format", "TBD"))
 
     def filled(key):
+        """A milestone counts only if a date is recorded AND that date has passed."""
         v = row.get(key, "")
-        return bool(v and str(v) not in ("", "None", "NaT", "nan"))
+        if not v or str(v) in ("", "None", "NaT", "nan"):
+            return False
+        try:
+            return date.fromisoformat(str(v)[:10]) <= date.today()
+        except (ValueError, TypeError):
+            return False
 
     # Phase 1 — Draft (30% of total)
     p1_done  = sum(filled(k) for k in ("draft_delivered", "draft_commented", "draft_completed"))
