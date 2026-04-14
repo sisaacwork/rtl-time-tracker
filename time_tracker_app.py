@@ -83,6 +83,13 @@ div[data-testid="stMetric"] {
     margin-top: 14px;
     margin-bottom: 4px;
 }
+
+/* Primary buttons: dark text on #B4E817 lime-green background for legibility */
+button[kind="primary"],
+div[data-testid="stButton"] > button[kind="primary"],
+div[data-testid="stFormSubmitButton"] > button[kind="primary"] {
+    color: #171717 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -232,7 +239,7 @@ PROJECTS_COLS = [
     "draft_delivered", "draft_commented", "draft_completed",
     "layout1_delivered", "layout1_commented", "layout2_delivered", "layout2_approved",
     "print_date", "go_live_date",
-    "notes",
+    "notes", "pct_override",
 ]
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -464,7 +471,7 @@ def _fetch_content_bytes():
         return local.read_bytes()
 
 
-@st.cache_data(ttl=30, show_spinner="Loading content projects...")
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_content_projects():
     """
     Returns (projects_df, settings_dict, all_pillars_list, all_codes_dict).
@@ -563,6 +570,7 @@ def save_content_projects(
             str(row.get("print_date",         "") or ""),
             str(row.get("go_live_date",       "") or ""),
             str(row.get("notes",              "") or ""),
+            float(row.get("pct_override", 0.0) or 0.0),
         ])
 
     ws_s = wb.create_sheet("settings")
@@ -2051,21 +2059,58 @@ def _content_progress(row):
     return total, p1_fill, p2_fill, p3_fill
 
 
+def _progress_from_override(pct: int):
+    """
+    Map a manual 0–100 override to (total, p1_fill, p2_fill, p3_fill).
+    Fills the three phase segments sequentially (Draft→Layout→Prod)
+    so the bar reads left-to-right like real progress.
+    """
+    pct = max(0, min(100, int(pct)))
+    if pct <= 30:
+        p1 = round(pct / 30 * 100)
+        p2, p3 = 0, 0
+    elif pct <= 90:
+        p1 = 100
+        p2 = round((pct - 30) / 60 * 100)
+        p3 = 0
+    else:
+        p1, p2 = 100, 100
+        p3 = round((pct - 90) / 10 * 100)
+    return pct, p1, p2, p3
+
+
 def _pillar_color(pillar: str) -> str:
     return PILLAR_COLORS.get(pillar, DEFAULT_PILLAR_COLOR)
 
 
 def _project_card_html(proj: dict, pillar_color: str) -> str:
     """Render one project as a dark card with a pillar-colored progress bar."""
-    total, p1, p2, p3 = _content_progress(proj)
-    title   = proj.get("title",  "Untitled")
-    status  = proj.get("status", "")
-    pillar  = proj.get("pillar", "")
-    fmt     = proj.get("format", "")
-    owner   = proj.get("owner",  "")
-    ptype   = proj.get("type",   "")
-    budget  = proj.get("budget",    0.0) or 0.0
-    hours   = proj.get("est_hours", 0.0) or 0.0
+    # Use manual override if set, otherwise auto-calculate from milestone dates
+    override_raw = proj.get("pct_override", 0)
+    try:
+        override = int(float(override_raw)) if override_raw else 0
+    except (ValueError, TypeError):
+        override = 0
+
+    if override > 0:
+        total, p1, p2, p3 = _progress_from_override(override)
+        manual_label = (
+            "<span style='font-size:0.65rem;color:#9E9E9E;font-weight:400'>"
+            " (manual)</span>"
+        )
+    else:
+        total, p1, p2, p3 = _content_progress(proj)
+        manual_label = ""
+
+    title    = proj.get("title",    "Untitled")
+    status   = proj.get("status",   "")
+    pillar   = proj.get("pillar",   "")
+    fmt      = proj.get("format",   "")
+    owner    = proj.get("owner",    "")
+    ptype    = proj.get("type",     "")
+    acct     = proj.get("acct_code","")
+    budget   = proj.get("budget",    0.0) or 0.0
+    hours    = proj.get("est_hours", 0.0) or 0.0
 
     budget_str = f"${float(budget):,.0f}" if budget else "—"
     hours_str  = f"{float(hours):,.0f} hrs" if hours else "—"
@@ -2084,7 +2129,9 @@ def _project_card_html(proj: dict, pillar_color: str) -> str:
   </div>
 
   <div style="font-size:0.82rem;color:#C5C5C5;margin-bottom:6px">{status}</div>
-  <div style="font-size:0.9rem;font-weight:700;color:#B4E817;margin-bottom:10px">{total}% complete</div>
+  <div style="font-size:0.9rem;font-weight:700;color:#B4E817;margin-bottom:10px">
+    {total}% complete{manual_label}
+  </div>
 
   <!-- Progress bar: 3 phase segments (widths 30% / 60% / 10%) -->
   <div style="display:flex;gap:3px;height:9px;margin-bottom:4px">
@@ -2109,8 +2156,9 @@ def _project_card_html(proj: dict, pillar_color: str) -> str:
     <span><span style="color:#FCFCFC;font-weight:600">{ptype}</span></span>
     <span>Owner: <span style="color:#FCFCFC;font-weight:600">{owner}</span></span>
     <span>Format: <span style="color:#FCFCFC;font-weight:600">{fmt}</span></span>
+    <span>Code: <span style="color:#FCFCFC;font-weight:600">{acct}</span></span>
     <span>Budget: <span style="color:#FCFCFC;font-weight:600">{budget_str}</span></span>
-    <span>Est. Hours: <span style="color:#FCFCFC;font-weight:600">{hours_str}</span></span>
+    <span>Est. RTL Hours: <span style="color:#FCFCFC;font-weight:600">{hours_str}</span></span>
   </div>
 </div>
 """
@@ -2128,74 +2176,22 @@ def view_content_kpis():
     c_colors = _chart_colors()
     projects, settings, all_pillars, all_codes = load_content_projects()
 
-    # Hourly rate: auto-derive from Financial KPIs annual staff cost if available,
-    # otherwise fall back to the value stored in content settings, then to $91.03.
-    try:
-        _, fin_settings, _ = load_finances()
-        ann_cost = float(fin_settings.get("annual_staff_cost", 0.0))
-        auto_rate = round(ann_cost * 0.00012019, 2) if ann_cost > 0 else 0.0
-    except Exception:
-        auto_rate = 0.0
+    # Hourly rate: auto-derive from Financial KPIs annual staff cost if available.
+    # Cache in session_state so load_finances() only fires once per session,
+    # not on every widget interaction (which causes page jumps).
+    if "cp_auto_rate" not in st.session_state:
+        try:
+            _, fin_settings, _ = load_finances()
+            ann_cost = float(fin_settings.get("annual_staff_cost", 0.0))
+            st.session_state["cp_auto_rate"] = (
+                round(ann_cost * 0.00012019, 2) if ann_cost > 0 else 0.0
+            )
+        except Exception:
+            st.session_state["cp_auto_rate"] = 0.0
+    auto_rate = st.session_state["cp_auto_rate"]
 
     stored_rate  = float(settings.get("rtl_hourly_rate", 0.0))
     default_rate = stored_rate if stored_rate > 0 else (auto_rate if auto_rate > 0 else 91.03)
-
-    # ── Global Settings ───────────────────────────────────────────────────────
-    with st.expander("Global Settings", expanded=projects.empty):
-        gs1, gs2 = st.columns(2)
-        hourly_rate = gs1.number_input(
-            "RTL Staff Cost ($/hr)",
-            min_value=0.0, step=0.01,
-            value=default_rate,
-            format="%.2f",
-            key="cp_hourly_rate",
-            help="Used to calculate estimated RTL labor cost per project. "
-                 "Auto-filled from Financial KPIs if set.",
-        )
-        if auto_rate > 0:
-            gs1.caption(f"Derived from Financial KPIs annual cost: ${auto_rate:.2f}/hr")
-
-        # ── Add custom pillar ─────────────────────────────────────────────────
-        st.markdown(
-            "<p style='color:#9E9E9E;font-size:0.85rem;margin-top:10px'>"
-            "Add custom pillar (leave blank to skip)</p>",
-            unsafe_allow_html=True,
-        )
-        pc1, pc2 = st.columns([3, 1])
-        new_pillar = pc1.text_input("New pillar name", key="cp_new_pillar",
-                                    label_visibility="collapsed",
-                                    placeholder="e.g. Joint Venture")
-
-        # ── Add custom accounting code ─────────────────────────────────────────
-        st.markdown(
-            "<p style='color:#9E9E9E;font-size:0.85rem;margin-top:10px'>"
-            "Add custom accounting code (leave blank to skip)</p>",
-            unsafe_allow_html=True,
-        )
-        cc1, cc2, cc3 = st.columns([1, 3, 1])
-        new_code_id   = cc1.text_input("Code", key="cp_new_code_id",
-                                       label_visibility="collapsed",
-                                       placeholder="e.g. 711")
-        new_code_name = cc2.text_input("Code name", key="cp_new_code_name",
-                                       label_visibility="collapsed",
-                                       placeholder="e.g. Special Projects")
-
-        if st.button("Save Global Settings", type="primary"):
-            new_settings    = {"rtl_hourly_rate": hourly_rate}
-            custom_pillars  = [p for p in all_pillars if p not in DEFAULT_PILLARS]
-            extra_codes     = {k: v for k, v in all_codes.items() if k not in CONTENT_ACCT_CODES}
-
-            if new_pillar.strip() and new_pillar.strip() not in all_pillars:
-                custom_pillars.append(new_pillar.strip())
-            if new_code_id.strip() and new_code_name.strip():
-                extra_codes[new_code_id.strip()] = new_code_name.strip()
-
-            ok, msg = save_content_projects(projects, new_settings, custom_pillars, extra_codes)
-            if ok:
-                st.toast("Settings saved.")
-                st.rerun()
-            else:
-                st.error(msg)
 
     # ── Add / Edit Project Form ───────────────────────────────────────────────
     edit_id = st.session_state.get("cp_edit_id", None)
@@ -2282,7 +2278,7 @@ def view_content_kpis():
             key="cp_budget",
         )
         cp_hours = b2.number_input(
-            "RTL Estimated Hours", min_value=0.0, step=1.0, format="%.1f",
+            "Est. RTL Hours", min_value=0.0, step=1.0, format="%.1f",
             value=float(edit_proj.get("est_hours", 0.0) or 0.0),
             key="cp_hours",
         )
@@ -2349,6 +2345,30 @@ def view_content_kpis():
                                 value=str(edit_proj.get("notes", "") or ""),
                                 height=80)
 
+        # Manual completion override
+        st.markdown(
+            "<p style='color:#9E9E9E;font-size:0.85rem;margin-top:4px'>"
+            "Completion % override — set this if the auto-calculated value "
+            "(based on milestone dates) isn't accurate. Set to 0 to go back "
+            "to auto-calculate.</p>",
+            unsafe_allow_html=True,
+        )
+        ov1, ov2 = st.columns([1, 3])
+        cp_pct_override = ov1.number_input(
+            "% Complete Override",
+            min_value=0, max_value=100, step=1,
+            value=int(float(edit_proj.get("pct_override", 0) or 0)),
+            key="cp_pct_override",
+            label_visibility="collapsed",
+        )
+        if cp_pct_override > 0:
+            ov2.info(
+                f"Cards will show **{cp_pct_override}%** instead of the "
+                f"auto-calculated value."
+            )
+        else:
+            ov2.caption("Currently auto-calculating from milestone dates.")
+
         def _fmt_date(d):
             return d.isoformat() if d else ""
 
@@ -2391,6 +2411,7 @@ def view_content_kpis():
                     "print_date":           _fmt_date(cp_print_date) if cp_print_date else "",
                     "go_live_date":         _fmt_date(cp_go_live)    if cp_go_live    else "",
                     "notes":                cp_notes,
+                    "pct_override":         cp_pct_override,
                 }
                 new_df = pd.DataFrame([new_row])
                 if edit_id:
@@ -2484,6 +2505,66 @@ def view_content_kpis():
                         st.rerun()
                     else:
                         st.error(msg)
+
+    # ── Global Settings (bottom of page) ─────────────────────────────────────
+    st.divider()
+    with st.expander("Global Settings", expanded=False):
+        gs1, gs2 = st.columns(2)
+        hourly_rate = gs1.number_input(
+            "RTL Staff Cost ($/hr)",
+            min_value=0.0, step=0.01,
+            value=default_rate,
+            format="%.2f",
+            key="cp_hourly_rate",
+            help="Used to calculate estimated RTL labor cost per project. "
+                 "Auto-filled from Financial KPIs if set.",
+        )
+        if auto_rate > 0:
+            gs1.caption(f"Derived from Financial KPIs annual cost: ${auto_rate:.2f}/hr")
+
+        # ── Add custom pillar ─────────────────────────────────────────────────
+        st.markdown(
+            "<p style='color:#9E9E9E;font-size:0.85rem;margin-top:10px'>"
+            "Add custom pillar (leave blank to skip)</p>",
+            unsafe_allow_html=True,
+        )
+        pc1, _ = st.columns([3, 1])
+        new_pillar = pc1.text_input("New pillar name", key="cp_new_pillar",
+                                    label_visibility="collapsed",
+                                    placeholder="e.g. Joint Venture")
+
+        # ── Add custom accounting code ────────────────────────────────────────
+        st.markdown(
+            "<p style='color:#9E9E9E;font-size:0.85rem;margin-top:10px'>"
+            "Add custom accounting code (leave blank to skip)</p>",
+            unsafe_allow_html=True,
+        )
+        cc1, cc2, _ = st.columns([1, 3, 1])
+        new_code_id   = cc1.text_input("Code", key="cp_new_code_id",
+                                       label_visibility="collapsed",
+                                       placeholder="e.g. 711")
+        new_code_name = cc2.text_input("Code name", key="cp_new_code_name",
+                                       label_visibility="collapsed",
+                                       placeholder="e.g. Special Projects")
+
+        if st.button("Save Global Settings", type="primary"):
+            new_settings   = {"rtl_hourly_rate": hourly_rate}
+            custom_pillars = [p for p in all_pillars if p not in DEFAULT_PILLARS]
+            extra_codes    = {k: v for k, v in all_codes.items() if k not in CONTENT_ACCT_CODES}
+
+            if new_pillar.strip() and new_pillar.strip() not in all_pillars:
+                custom_pillars.append(new_pillar.strip())
+            if new_code_id.strip() and new_code_name.strip():
+                extra_codes[new_code_id.strip()] = new_code_name.strip()
+
+            # Clear cached auto-rate so it re-derives on next load
+            st.session_state.pop("cp_auto_rate", None)
+            ok, msg = save_content_projects(projects, new_settings, custom_pillars, extra_codes)
+            if ok:
+                st.toast("Settings saved.")
+                st.rerun()
+            else:
+                st.error(msg)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
