@@ -482,7 +482,7 @@ def _fetch_content_bytes():
         return local.read_bytes()
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)
 def load_content_projects():
     """
     Returns (projects_df, settings_dict, all_pillars_list, all_codes_dict).
@@ -3078,7 +3078,7 @@ def _get_mysql_conn():
         return None
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)
 def _bldg_query(sql: str) -> pd.DataFrame:
     """Run a read-only MySQL query and return a DataFrame. Cached 1 hr."""
     conn = _get_mysql_conn()
