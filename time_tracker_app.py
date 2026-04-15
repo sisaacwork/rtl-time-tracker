@@ -3097,6 +3097,279 @@ def _bldg_query(sql: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# BUILDING KPIs — SHARED SNAPSHOT
+# All unfiltered queries run once and are stored here, shared across every user
+# session. The Refresh button re-runs them. This avoids accumulating dozens of
+# cached DataFrames (one per filter combination) in Streamlit's per-session RAM.
+# ══════════════════════════════════════════════════════════════════════════════
+
+_BLDG_COMPLETENESS_FIELDS = 56
+_BLDG_SCORE_EXPR = """
+        (b2.name_intl IS NOT NULL AND b2.name_intl != '') +
+        (b2.name_local IS NOT NULL AND b2.name_local != '') +
+        (b2.name_aka IS NOT NULL AND b2.name_aka != '') +
+        (b2.name_fka IS NOT NULL AND b2.name_fka != '') +
+        (b2.complex_id IS NOT NULL AND b2.complex_id != 0) +
+        (b2.address IS NOT NULL AND b2.address != '') +
+        (b2.zip IS NOT NULL AND b2.zip != '') +
+        (b2.latitude IS NOT NULL AND b2.latitude != 0) +
+        (b2.longitude IS NOT NULL AND b2.longitude != 0) +
+        (b2.structural_material IS NOT NULL AND b2.structural_material != '') +
+        (b2.material_displayed IS NOT NULL AND b2.material_displayed != '') +
+        (b2.height_architecture IS NOT NULL AND b2.height_architecture != 0) +
+        (b2.height_observatory IS NOT NULL AND b2.height_observatory != 0) +
+        (b2.height_floor IS NOT NULL AND b2.height_floor != 0) +
+        (b2.height_roof IS NOT NULL AND b2.height_roof != 0) +
+        (b2.height_tip IS NOT NULL AND b2.height_tip != 0) +
+        (b2.height_helipad IS NOT NULL AND b2.height_helipad != 0) +
+        (b2.floors_above IS NOT NULL AND b2.floors_above != 0) +
+        (b2.floors_below IS NOT NULL AND b2.floors_below != 0) +
+        (b2.status IS NOT NULL AND b2.status != '') +
+        (b2.proposed IS NOT NULL AND b2.proposed != 0) +
+        (b2.start IS NOT NULL AND b2.start != 0) +
+        (b2.completed IS NOT NULL AND b2.completed != 0) +
+        (b2.demolished IS NOT NULL AND b2.demolished != 0) +
+        (b2.main_use_01 IS NOT NULL AND b2.main_use_01 != '') +
+        (b2.main_use_02 IS NOT NULL AND b2.main_use_02 != '') +
+        (b2.main_use_03 IS NOT NULL AND b2.main_use_03 != '') +
+        (b2.main_use_04 IS NOT NULL AND b2.main_use_04 != '') +
+        (b2.main_use_05 IS NOT NULL AND b2.main_use_05 != '') +
+        (b2.retrofit_use_01 IS NOT NULL AND b2.retrofit_use_01 != '') +
+        (b2.retrofit_use_02 IS NOT NULL AND b2.retrofit_use_02 != '') +
+        (b2.retrofit_use_03 IS NOT NULL AND b2.retrofit_use_03 != '') +
+        (b2.retrofit_use_04 IS NOT NULL AND b2.retrofit_use_04 != '') +
+        (b2.retrofit_use_05 IS NOT NULL AND b2.retrofit_use_05 != '') +
+        (b2.elevators IS NOT NULL AND b2.elevators != 0) +
+        (b2.elevator_speed IS NOT NULL AND b2.elevator_speed != 0) +
+        (b2.gross_floor_area IS NOT NULL AND b2.gross_floor_area != 0) +
+        (b2.usuable_floor_area IS NOT NULL AND b2.usuable_floor_area != 0) +
+        (b2.parking IS NOT NULL AND b2.parking != 0) +
+        (b2.apartments IS NOT NULL AND b2.apartments != 0) +
+        (b2.office_space IS NOT NULL AND b2.office_space != 0) +
+        (b2.hotel_rooms IS NOT NULL AND b2.hotel_rooms != 0) +
+        (b2.commercial IS NOT NULL AND b2.commercial != 0) +
+        (b2.observatory IS NOT NULL AND b2.observatory != 'no') +
+        (b2.landmark_status IS NOT NULL AND b2.landmark_status != 'none') +
+        (b2.energy_label IS NOT NULL AND b2.energy_label != '') +
+        (b2.recladding_year IS NOT NULL AND b2.recladding_year != 0) +
+        (b2.project_area IS NOT NULL AND b2.project_area != 0) +
+        (b2.retrofit_start IS NOT NULL AND b2.retrofit_start != 0) +
+        (b2.retrofit_end IS NOT NULL AND b2.retrofit_end != 0) +
+        (b2.about IS NOT NULL AND b2.about != '') +
+        (b2.trivia IS NOT NULL AND b2.trivia != '') +
+        (b2.city_id IS NOT NULL AND b2.city_id != '') +
+        (b2.country_id IS NOT NULL AND b2.country_id != '') +
+        (b2.region_id IS NOT NULL AND b2.region_id != '') +
+        (b2.timber IS NOT NULL AND b2.timber != 0)
+"""
+
+
+@st.cache_resource(show_spinner=False)
+def _bldg_snapshot_store() -> dict:
+    """One shared mutable dict for all users. Holds pre-computed DataFrames."""
+    return {"data": None}
+
+
+def _run_snap_query(sql: str) -> pd.DataFrame:
+    """Direct (uncached) query used only inside _build_bldg_snapshot."""
+    conn = _get_mysql_conn()
+    if conn is None:
+        return pd.DataFrame()
+    try:
+        if not conn.is_connected():
+            conn.reconnect(attempts=2, delay=1)
+        cur = conn.cursor(dictionary=True)
+        cur.execute(sql)
+        rows = cur.fetchall()
+        cur.close()
+        return pd.DataFrame(rows) if rows else pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+
+def _build_bldg_snapshot() -> None:
+    """Run every unfiltered building query and store results in _bldg_snapshot_store."""
+    cy     = date.today().year
+    jan1cy = f"{cy}-01-01"
+    q      = _run_snap_query   # shorthand
+    snap   = {}
+
+    # Key Metrics
+    snap["totals"] = q(f"""
+        SELECT
+          COUNT(*) AS total,
+          SUM(CASE WHEN b.date_create >= '{jan1cy}' THEN 1 ELSE 0 END) AS added_cy,
+          SUM(CASE WHEN b.date_update >= '{jan1cy}'
+                    AND (b.date_create IS NULL OR b.date_create < '{jan1cy}')
+               THEN 1 ELSE 0 END) AS updated_cy
+        FROM ctbuh_building b WHERE b.deleted_at IS NULL
+    """)
+    snap["ctry_cnt"] = q("""
+        SELECT COUNT(DISTINCT b.country_id) AS n
+        FROM   ctbuh_building b
+        WHERE  b.deleted_at IS NULL
+          AND  b.country_id IS NOT NULL AND b.country_id != ''
+    """)
+    snap["jan1"] = q(f"""
+        SELECT COUNT(*) AS total
+        FROM   ctbuh_building b
+        WHERE  b.deleted_at IS NULL AND b.date_create <= '{jan1cy}'
+    """)
+
+    # Completeness (most expensive query — runs once here, never again until Refresh)
+    snap["comp_dist"] = q(f"""
+        SELECT
+          CASE
+            WHEN score_pct < 20 THEN '0-19%'
+            WHEN score_pct < 40 THEN '20-39%'
+            WHEN score_pct < 60 THEN '40-59%'
+            WHEN score_pct < 80 THEN '60-79%'
+            ELSE '80-100%'
+          END AS bucket,
+          COUNT(*) AS building_count
+        FROM (
+          SELECT ROUND(( {_BLDG_SCORE_EXPR} ) / {_BLDG_COMPLETENESS_FIELDS} * 100) AS score_pct
+          FROM   ctbuh_building b2 WHERE b2.deleted_at IS NULL
+        ) sub
+        GROUP BY bucket ORDER BY MIN(score_pct)
+    """)
+    snap["avg_comp"] = q(f"""
+        SELECT ROUND(AVG(( {_BLDG_SCORE_EXPR} ) / {_BLDG_COMPLETENESS_FIELDS} * 100), 1) AS avg_pct
+        FROM   ctbuh_building b2 WHERE b2.deleted_at IS NULL
+    """)
+
+    # Missing critical fields
+    snap["missing"] = q("""
+        SELECT
+          SUM(CASE WHEN b.address IS NULL OR b.address = ''
+              THEN 1 ELSE 0 END)                                     AS missing_address,
+          SUM(CASE WHEN b.latitude IS NULL OR b.latitude = 0
+              THEN 1 ELSE 0 END)                                     AS missing_latitude,
+          SUM(CASE WHEN b.longitude IS NULL OR b.longitude = 0
+              THEN 1 ELSE 0 END)                                     AS missing_longitude,
+          SUM(CASE WHEN b.structural_material IS NULL OR b.structural_material = ''
+              THEN 1 ELSE 0 END)                                     AS missing_material,
+          COUNT(*)                                                    AS total
+        FROM ctbuh_building b WHERE b.deleted_at IS NULL
+    """)
+
+    # Buildings by Function — all years
+    snap["func"] = q("""
+        SELECT
+          CASE
+            WHEN b.main_use_02 != '' THEN 'Mixed-Use'
+            WHEN b.main_use_01 = 'office' THEN 'All-Office'
+            WHEN b.main_use_01 = 'residential' THEN 'All-Residential'
+            WHEN b.main_use_01 = 'hotel' THEN 'All-Hotel'
+            ELSE 'Other'
+          END AS function_group,
+          COUNT(*) AS count
+        FROM ctbuh_building b WHERE b.deleted_at IS NULL
+        GROUP BY function_group ORDER BY count DESC
+    """)
+
+    # Buildings by Structural Material — all years
+    snap["mat"] = q("""
+        SELECT
+          CASE b.structural_material
+            WHEN 'steel'                     THEN 'All-Steel'
+            WHEN 'concrete'                  THEN 'All-Concrete'
+            WHEN 'composite'                 THEN 'Composite'
+            WHEN 'timber'                    THEN 'Timber'
+            WHEN 'timber/concrete'           THEN 'Timber'
+            WHEN 'timber/composite'          THEN 'Timber'
+            WHEN 'timber composite/concrete' THEN 'Timber'
+            WHEN 'concrete/steel'            THEN 'Mixed'
+            WHEN 'steel/concrete'            THEN 'Mixed'
+            ELSE 'Other/Unknown'
+          END AS material_group,
+          COUNT(*) AS count
+        FROM ctbuh_building b WHERE b.deleted_at IS NULL
+        GROUP BY material_group ORDER BY count DESC
+    """)
+
+    # Buildings by Status — all years
+    snap["status"] = q("""
+        SELECT
+          CASE b.status
+            WHEN 'COM'  THEN 'Complete'
+            WHEN 'UCT'  THEN 'Under Construction'
+            WHEN 'STO'  THEN 'Under Construction'
+            WHEN 'UC'   THEN 'Under Construction'
+            WHEN 'PRO'  THEN 'Proposed'
+            WHEN 'DEM'  THEN 'Demolished'
+            WHEN 'UDEM' THEN 'Demolished'
+            WHEN 'REN'  THEN 'Renovated'
+            WHEN 'UREN' THEN 'Renovated'
+            WHEN 'CAN'  THEN 'Cancelled'
+            WHEN 'NC'   THEN 'Never Completed'
+            ELSE 'Other'
+          END AS status_group,
+          COUNT(*) AS count
+        FROM ctbuh_building b WHERE b.deleted_at IS NULL
+        GROUP BY status_group ORDER BY count DESC
+    """)
+
+    # Height Distribution — all years
+    snap["height"] = q("""
+        SELECT
+          CASE
+            WHEN b.height_architecture < 100 THEN '<100m'
+            WHEN b.height_architecture < 150 THEN '100-149m'
+            WHEN b.height_architecture < 200 THEN '150-199m'
+            WHEN b.height_architecture < 300 THEN '200-299m'
+            WHEN b.height_architecture < 400 THEN '300-399m'
+            WHEN b.height_architecture < 500 THEN '400-499m'
+            ELSE '500m+'
+          END AS height_band,
+          COUNT(*) AS count
+        FROM ctbuh_building b
+        WHERE b.deleted_at IS NULL
+          AND b.height_architecture IS NOT NULL AND b.height_architecture > 0
+        GROUP BY height_band ORDER BY MIN(b.height_architecture)
+    """)
+
+    # Geography — all years (same data for both new/updated since no date filter)
+    snap["geo_regions"] = q("""
+        SELECT r.name, COUNT(b.id) AS count
+        FROM   ctbuh_building b JOIN v2_regions r ON b.region_id = r.id
+        WHERE  b.deleted_at IS NULL
+        GROUP  BY r.name ORDER BY count DESC
+    """)
+    snap["geo_countries"] = q("""
+        SELECT c.name, COUNT(b.id) AS count
+        FROM   ctbuh_building b JOIN v2_countries c ON b.country_id = c.id
+        WHERE  b.deleted_at IS NULL
+        GROUP  BY c.name ORDER BY count DESC LIMIT 30
+    """)
+    snap["geo_cities"] = q("""
+        SELECT ci.name, COUNT(b.id) AS count
+        FROM   ctbuh_building b JOIN v2_cities ci ON b.city_id = ci.id
+        WHERE  b.deleted_at IS NULL
+        GROUP  BY ci.name ORDER BY count DESC LIMIT 25
+    """)
+    snap["geo_agg"] = q("""
+        SELECT a.name, COUNT(b.id) AS count
+        FROM   ctbuh_building b
+        JOIN   v2_cities ci ON b.city_id = ci.id
+        JOIN   agglomerations a ON ci.agglomeration_id = a.id
+        WHERE  b.deleted_at IS NULL
+        GROUP  BY a.name ORDER BY count DESC LIMIT 25
+    """)
+
+    snap["generated_at"] = datetime.now().strftime("%b %d, %Y %H:%M")
+    _bldg_snapshot_store()["data"] = snap
+
+
+def _get_bldg_snap() -> dict:
+    """Return snapshot data, generating it on first call."""
+    store = _bldg_snapshot_store()
+    if store["data"] is None:
+        _build_bldg_snapshot()
+    return store["data"] or {}
+
+
 def view_building_kpis():
     c = _chart_colors()
 
@@ -3124,25 +3397,15 @@ def view_building_kpis():
     current_year = date.today().year
     jan1_cy = f"{current_year}-01-01"
 
+    # Load the shared snapshot (generated once, shared across all users)
+    snap = _get_bldg_snap()
+    snap_ts = snap.get("generated_at", "unknown")
+
     # ══════════════════════════════════════════════════════════════════════════
-    # KEY METRICS
+    # KEY METRICS  (from snapshot)
     # ══════════════════════════════════════════════════════════════════════════
-    df_totals = _bldg_query(f"""
-        SELECT
-          COUNT(*) AS total,
-          SUM(CASE WHEN b.date_create >= '{jan1_cy}' THEN 1 ELSE 0 END) AS added_cy,
-          SUM(CASE WHEN b.date_update >= '{jan1_cy}'
-                    AND (b.date_create IS NULL OR b.date_create < '{jan1_cy}')
-               THEN 1 ELSE 0 END) AS updated_cy
-        FROM ctbuh_building b
-        WHERE b.deleted_at IS NULL
-    """)
-    df_ctry_cnt = _bldg_query("""
-        SELECT COUNT(DISTINCT b.country_id) AS n
-        FROM   ctbuh_building b
-        WHERE  b.deleted_at IS NULL
-          AND  b.country_id IS NOT NULL AND b.country_id != ''
-    """)
+    df_totals   = snap.get("totals",   pd.DataFrame())
+    df_ctry_cnt = snap.get("ctry_cnt", pd.DataFrame())
     if not df_totals.empty:
         total_bldgs = int(df_totals["total"].iloc[0])
         added_cy    = int(df_totals["added_cy"].iloc[0])
@@ -3155,7 +3418,7 @@ def view_building_kpis():
         km4.metric("Countries Represented",    f"{ctry_cnt:,}")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # PROGRESS TO GOAL
+    # PROGRESS TO GOAL  (from snapshot)
     # ══════════════════════════════════════════════════════════════════════════
     ANNUAL_GOALS = {
         2026: 47_250,
@@ -3167,17 +3430,8 @@ def view_building_kpis():
     if current_year in ANNUAL_GOALS:
         goal_target = ANNUAL_GOALS[current_year]
 
-        df_jan1 = _bldg_query(f"""
-            SELECT COUNT(*) AS total
-            FROM   ctbuh_building b
-            WHERE  b.deleted_at IS NULL
-              AND  b.date_create <= '{jan1_cy}'
-        """)
-        df_goal = _bldg_query("""
-            SELECT COUNT(*) AS total
-            FROM   ctbuh_building b
-            WHERE  b.deleted_at IS NULL
-        """)
+        df_jan1 = snap.get("jan1",   pd.DataFrame())
+        df_goal = snap.get("totals", pd.DataFrame())
 
         if not df_goal.empty and not df_jan1.empty:
             jan1_count    = int(df_jan1["total"].iloc[0])
@@ -3281,9 +3535,12 @@ def view_building_kpis():
             ctrl_col.warning("'From' date must be before 'To' date.")
             custom_start, custom_end = custom_end, custom_start
 
+    ctrl_col.caption(f"Snapshot last updated: {snap_ts}")
     if ctrl_col.button("Refresh Database Data"):
         _bldg_query.clear()
         _get_mysql_conn.clear()
+        _bldg_snapshot_store()["data"] = None   # invalidate snapshot
+        _build_bldg_snapshot()                   # rebuild immediately
         st.rerun()
 
     # Build SQL date range clauses based on selection
@@ -3419,52 +3676,44 @@ def view_building_kpis():
     # ══════════════════════════════════════════════════════════════════════════
     st.markdown("### Buildings")
 
-    # ── 5. Buildings by function (pie) ────────────────────────────────────────
-    # main_use_01/02 are enums — use exact value matching
-    df_func = _bldg_query(f"""
-        SELECT
-          CASE
-            WHEN b.main_use_02 != ''
-                 THEN 'Mixed-Use'
-            WHEN b.main_use_01 = 'office'
-                 THEN 'All-Office'
-            WHEN b.main_use_01 = 'residential'
-                 THEN 'All-Residential'
-            WHEN b.main_use_01 = 'hotel'
-                 THEN 'All-Hotel'
-            ELSE 'Other'
-          END AS function_group,
-          COUNT(*) AS count
-        FROM   ctbuh_building b
-        WHERE  b.deleted_at IS NULL
-          AND  {filt_b_pie}
-        GROUP  BY function_group
-        ORDER  BY count DESC
-    """)
-
-    # ── 6. Buildings by structural material (pie) ─────────────────────────────
-    # structural_material is an enum — use exact value matching
-    df_mat = _bldg_query(f"""
-        SELECT
-          CASE b.structural_material
-            WHEN 'steel'                     THEN 'All-Steel'
-            WHEN 'concrete'                  THEN 'All-Concrete'
-            WHEN 'composite'                 THEN 'Composite'
-            WHEN 'timber'                    THEN 'Timber'
-            WHEN 'timber/concrete'           THEN 'Timber'
-            WHEN 'timber/composite'          THEN 'Timber'
-            WHEN 'timber composite/concrete' THEN 'Timber'
-            WHEN 'concrete/steel'            THEN 'Mixed'
-            WHEN 'steel/concrete'            THEN 'Mixed'
-            ELSE 'Other/Unknown'
-          END AS material_group,
-          COUNT(*) AS count
-        FROM   ctbuh_building b
-        WHERE  b.deleted_at IS NULL
-          AND  {filt_b_pie}
-        GROUP  BY material_group
-        ORDER  BY count DESC
-    """)
+    # ── 5 & 6. Function + Material (snapshot when All years, live when filtered) ─
+    if filter_mode == "All years":
+        df_func = snap.get("func", pd.DataFrame())
+        df_mat  = snap.get("mat",  pd.DataFrame())
+    else:
+        df_func = _bldg_query(f"""
+            SELECT
+              CASE
+                WHEN b.main_use_02 != '' THEN 'Mixed-Use'
+                WHEN b.main_use_01 = 'office' THEN 'All-Office'
+                WHEN b.main_use_01 = 'residential' THEN 'All-Residential'
+                WHEN b.main_use_01 = 'hotel' THEN 'All-Hotel'
+                ELSE 'Other'
+              END AS function_group,
+              COUNT(*) AS count
+            FROM   ctbuh_building b
+            WHERE  b.deleted_at IS NULL AND {filt_b_pie}
+            GROUP  BY function_group ORDER BY count DESC
+        """)
+        df_mat = _bldg_query(f"""
+            SELECT
+              CASE b.structural_material
+                WHEN 'steel'                     THEN 'All-Steel'
+                WHEN 'concrete'                  THEN 'All-Concrete'
+                WHEN 'composite'                 THEN 'Composite'
+                WHEN 'timber'                    THEN 'Timber'
+                WHEN 'timber/concrete'           THEN 'Timber'
+                WHEN 'timber/composite'          THEN 'Timber'
+                WHEN 'timber composite/concrete' THEN 'Timber'
+                WHEN 'concrete/steel'            THEN 'Mixed'
+                WHEN 'steel/concrete'            THEN 'Mixed'
+                ELSE 'Other/Unknown'
+              END AS material_group,
+              COUNT(*) AS count
+            FROM   ctbuh_building b
+            WHERE  b.deleted_at IS NULL AND {filt_b_pie}
+            GROUP  BY material_group ORDER BY count DESC
+        """)
 
     # ── 7. Renovations & Retrofits over time (line) ───────────────────────────
     df_reno = _bldg_query(f"""
@@ -3524,54 +3773,52 @@ def view_building_kpis():
     _monthly_line(df_reno, "count", "Renovations & Retrofits Added / Updated Over Time",
                   color=CVU_PALETTE[2])
 
-    # ── 8. Buildings by Status (bar) ─────────────────────────────────────────
-    df_status = _bldg_query(f"""
-        SELECT
-          CASE b.status
-            WHEN 'COM'  THEN 'Complete'
-            WHEN 'UCT'  THEN 'Under Construction'
-            WHEN 'STO'  THEN 'Under Construction'
-            WHEN 'UC'   THEN 'Under Construction'
-            WHEN 'PRO'  THEN 'Proposed'
-            WHEN 'DEM'  THEN 'Demolished'
-            WHEN 'UDEM' THEN 'Demolished'
-            WHEN 'REN'  THEN 'Renovated'
-            WHEN 'UREN' THEN 'Renovated'
-            WHEN 'CAN'  THEN 'Cancelled'
-            WHEN 'NC'   THEN 'Never Completed'
-            ELSE 'Other'
-          END AS status_group,
-          COUNT(*) AS count
-        FROM   ctbuh_building b
-        WHERE  b.deleted_at IS NULL
-          AND  {filt_b_pie}
-        GROUP  BY status_group
-        ORDER  BY count DESC
-    """)
-
-    # ── 9. Height Distribution (bar) ──────────────────────────────────────────
+    # ── 8 & 9. Status + Height (snapshot when All years, live when filtered) ────
     HEIGHT_ORDER = ['<100m', '100-149m', '150-199m', '200-299m',
                     '300-399m', '400-499m', '500m+']
-    df_height = _bldg_query(f"""
-        SELECT
-          CASE
-            WHEN b.height_architecture < 100 THEN '<100m'
-            WHEN b.height_architecture < 150 THEN '100-149m'
-            WHEN b.height_architecture < 200 THEN '150-199m'
-            WHEN b.height_architecture < 300 THEN '200-299m'
-            WHEN b.height_architecture < 400 THEN '300-399m'
-            WHEN b.height_architecture < 500 THEN '400-499m'
-            ELSE '500m+'
-          END AS height_band,
-          COUNT(*) AS count
-        FROM   ctbuh_building b
-        WHERE  b.deleted_at IS NULL
-          AND  b.height_architecture IS NOT NULL
-          AND  b.height_architecture > 0
-          AND  {filt_b_pie}
-        GROUP  BY height_band
-        ORDER  BY MIN(b.height_architecture)
-    """)
+    if filter_mode == "All years":
+        df_status = snap.get("status", pd.DataFrame())
+        df_height = snap.get("height", pd.DataFrame())
+    else:
+        df_status = _bldg_query(f"""
+            SELECT
+              CASE b.status
+                WHEN 'COM'  THEN 'Complete'
+                WHEN 'UCT'  THEN 'Under Construction'
+                WHEN 'STO'  THEN 'Under Construction'
+                WHEN 'UC'   THEN 'Under Construction'
+                WHEN 'PRO'  THEN 'Proposed'
+                WHEN 'DEM'  THEN 'Demolished'
+                WHEN 'UDEM' THEN 'Demolished'
+                WHEN 'REN'  THEN 'Renovated'
+                WHEN 'UREN' THEN 'Renovated'
+                WHEN 'CAN'  THEN 'Cancelled'
+                WHEN 'NC'   THEN 'Never Completed'
+                ELSE 'Other'
+              END AS status_group,
+              COUNT(*) AS count
+            FROM   ctbuh_building b
+            WHERE  b.deleted_at IS NULL AND {filt_b_pie}
+            GROUP  BY status_group ORDER BY count DESC
+        """)
+        df_height = _bldg_query(f"""
+            SELECT
+              CASE
+                WHEN b.height_architecture < 100 THEN '<100m'
+                WHEN b.height_architecture < 150 THEN '100-149m'
+                WHEN b.height_architecture < 200 THEN '150-199m'
+                WHEN b.height_architecture < 300 THEN '200-299m'
+                WHEN b.height_architecture < 400 THEN '300-399m'
+                WHEN b.height_architecture < 500 THEN '400-499m'
+                ELSE '500m+'
+              END AS height_band,
+              COUNT(*) AS count
+            FROM   ctbuh_building b
+            WHERE  b.deleted_at IS NULL
+              AND  b.height_architecture IS NOT NULL AND b.height_architecture > 0
+              AND  {filt_b_pie}
+            GROUP  BY height_band ORDER BY MIN(b.height_architecture)
+        """)
 
     STATUS_COLORS = {
         'Complete':           CVU_GREEN,
@@ -3644,9 +3891,8 @@ def view_building_kpis():
     # ══════════════════════════════════════════════════════════════════════════
     st.markdown("### Data Quality")
 
-    # 56 public-facing fields tracked for completeness
-    _TOTAL_FIELDS = 56
-    _SCORE_EXPR = """
+    # Data Quality — always from snapshot (no date filter applies)
+    _SCORE_EXPR_PLACEHOLDER = """
         (b2.name_intl IS NOT NULL AND b2.name_intl != '') +
         (b2.name_local IS NOT NULL AND b2.name_local != '') +
         (b2.name_aka IS NOT NULL AND b2.name_aka != '') +
@@ -3705,47 +3951,9 @@ def view_building_kpis():
         (b2.timber IS NOT NULL AND b2.timber != 0)
     """
 
-    # Completeness distribution (no date filter — always whole database)
-    df_comp_dist = _bldg_query(f"""
-        SELECT
-          CASE
-            WHEN score_pct < 20 THEN '0-19%'
-            WHEN score_pct < 40 THEN '20-39%'
-            WHEN score_pct < 60 THEN '40-59%'
-            WHEN score_pct < 80 THEN '60-79%'
-            ELSE '80-100%'
-          END AS bucket,
-          COUNT(*) AS building_count
-        FROM (
-          SELECT ROUND(( {_SCORE_EXPR} ) / {_TOTAL_FIELDS} * 100) AS score_pct
-          FROM   ctbuh_building b2
-          WHERE  b2.deleted_at IS NULL
-        ) sub
-        GROUP  BY bucket
-        ORDER  BY MIN(score_pct)
-    """)
-
-    df_avg_comp = _bldg_query(f"""
-        SELECT ROUND(AVG(( {_SCORE_EXPR} ) / {_TOTAL_FIELDS} * 100), 1) AS avg_pct
-        FROM   ctbuh_building b2
-        WHERE  b2.deleted_at IS NULL
-    """)
-
-    # Missing critical fields (no date filter)
-    df_missing = _bldg_query("""
-        SELECT
-          SUM(CASE WHEN b.address IS NULL OR b.address = ''
-              THEN 1 ELSE 0 END)                                     AS missing_address,
-          SUM(CASE WHEN b.latitude IS NULL OR b.latitude = 0
-              THEN 1 ELSE 0 END)                                     AS missing_latitude,
-          SUM(CASE WHEN b.longitude IS NULL OR b.longitude = 0
-              THEN 1 ELSE 0 END)                                     AS missing_longitude,
-          SUM(CASE WHEN b.structural_material IS NULL OR b.structural_material = ''
-              THEN 1 ELSE 0 END)                                     AS missing_material,
-          COUNT(*)                                                    AS total
-        FROM ctbuh_building b
-        WHERE b.deleted_at IS NULL
-    """)
+    df_comp_dist = snap.get("comp_dist", pd.DataFrame())
+    df_avg_comp  = snap.get("avg_comp",  pd.DataFrame())
+    df_missing   = snap.get("missing",   pd.DataFrame())
 
     dq_col1, dq_col2 = st.columns(2)
 
@@ -3864,64 +4072,58 @@ def view_building_kpis():
         horizontal=True,
         key="bldg_geo_view",
     )
-    geo_filt  = filt_b_pie if geo_view == "New buildings (date added)" else filt_b_update
-    geo_label = "New" if geo_view == "New buildings (date added)" else "Updated"
+    geo_is_new = geo_view == "New buildings (date added)"
+    geo_label  = "New" if geo_is_new else "Updated"
 
-    geo_tab_region, geo_tab_country, geo_tab_city, geo_tab_agg = st.tabs(
-        ["Regions", "Countries", "Cities", "Agglomerations"]
-    )
-
-    with geo_tab_region:
+    # All years → use snapshot (one shared copy, no DB hit)
+    # Year / Custom → run live filtered query
+    if filter_mode == "All years":
+        # Both new and updated show the same unfiltered totals
+        _geo_data = lambda key: snap.get(key, pd.DataFrame())
+        df_regions  = _geo_data("geo_regions")
+        df_countries = _geo_data("geo_countries")
+        df_cities   = _geo_data("geo_cities")
+        df_agg      = _geo_data("geo_agg")
+    else:
+        geo_filt = filt_b_pie if geo_is_new else filt_b_update
         df_regions = _bldg_query(f"""
             SELECT r.name, COUNT(b.id) AS count
-            FROM   ctbuh_building b
-            JOIN   v2_regions r ON b.region_id = r.id
-            WHERE  b.deleted_at IS NULL
-              AND  {geo_filt}
-            GROUP  BY r.name
-            ORDER  BY count DESC
+            FROM   ctbuh_building b JOIN v2_regions r ON b.region_id = r.id
+            WHERE  b.deleted_at IS NULL AND {geo_filt}
+            GROUP  BY r.name ORDER BY count DESC
         """)
-        _hbar_geo(df_regions, 'name', 'count', f'{geo_label} Buildings by Region')
-
-    with geo_tab_country:
         df_countries = _bldg_query(f"""
             SELECT c.name, COUNT(b.id) AS count
-            FROM   ctbuh_building b
-            JOIN   v2_countries c ON b.country_id = c.id
-            WHERE  b.deleted_at IS NULL
-              AND  {geo_filt}
-            GROUP  BY c.name
-            ORDER  BY count DESC
-            LIMIT  30
+            FROM   ctbuh_building b JOIN v2_countries c ON b.country_id = c.id
+            WHERE  b.deleted_at IS NULL AND {geo_filt}
+            GROUP  BY c.name ORDER BY count DESC LIMIT 30
         """)
-        _hbar_geo(df_countries, 'name', 'count', f'Top 30 Countries — {geo_label} Buildings')
-
-    with geo_tab_city:
         df_cities = _bldg_query(f"""
             SELECT ci.name, COUNT(b.id) AS count
-            FROM   ctbuh_building b
-            JOIN   v2_cities ci ON b.city_id = ci.id
-            WHERE  b.deleted_at IS NULL
-              AND  {geo_filt}
-            GROUP  BY ci.name
-            ORDER  BY count DESC
-            LIMIT  25
+            FROM   ctbuh_building b JOIN v2_cities ci ON b.city_id = ci.id
+            WHERE  b.deleted_at IS NULL AND {geo_filt}
+            GROUP  BY ci.name ORDER BY count DESC LIMIT 25
         """)
-        _hbar_geo(df_cities, 'name', 'count', f'Top 25 Cities — {geo_label} Buildings')
-
-    with geo_tab_agg:
         df_agg = _bldg_query(f"""
             SELECT a.name, COUNT(b.id) AS count
             FROM   ctbuh_building b
-            JOIN   v2_cities ci  ON b.city_id = ci.id
+            JOIN   v2_cities ci ON b.city_id = ci.id
             JOIN   agglomerations a ON ci.agglomeration_id = a.id
-            WHERE  b.deleted_at IS NULL
-              AND  {geo_filt}
-            GROUP  BY a.name
-            ORDER  BY count DESC
-            LIMIT  25
+            WHERE  b.deleted_at IS NULL AND {geo_filt}
+            GROUP  BY a.name ORDER BY count DESC LIMIT 25
         """)
-        _hbar_geo(df_agg, 'name', 'count', f'Top 25 Agglomerations — {geo_label} Buildings')
+
+    geo_tab_region, geo_tab_country, geo_tab_city, geo_tab_agg_tab = st.tabs(
+        ["Regions", "Countries", "Cities", "Agglomerations"]
+    )
+    with geo_tab_region:
+        _hbar_geo(df_regions,  'name', 'count', f'{geo_label} Buildings by Region')
+    with geo_tab_country:
+        _hbar_geo(df_countries, 'name', 'count', f'Top 30 Countries — {geo_label} Buildings')
+    with geo_tab_city:
+        _hbar_geo(df_cities,   'name', 'count', f'Top 25 Cities — {geo_label} Buildings')
+    with geo_tab_agg_tab:
+        _hbar_geo(df_agg,      'name', 'count', f'Top 25 Agglomerations — {geo_label} Buildings')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
