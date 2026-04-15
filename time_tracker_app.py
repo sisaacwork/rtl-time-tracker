@@ -838,7 +838,7 @@ def _chart_colors() -> dict:
     if dark:
         return {
             "text":     CVU_WHITE,      # primary text / tick labels
-            "chart_labels": CVU_GRAY    # added for legibility
+            "chart_labels": CVU_GRAY,   # pie/donut slice label color
             "subtext":  CVU_GRAY,       # secondary / axis labels
             "plot_bg":  CVU_BLACK,      # chart plot area background
             "grid":     CVU_BORDER,     # grid lines
@@ -848,6 +848,7 @@ def _chart_colors() -> dict:
     else:
         return {
             "text":     "#1A1A1A",
+            "chart_labels": CVU_GRAY,   # pie/donut slice label color
             "subtext":  "#555555",
             "plot_bg":  "rgba(0,0,0,0)",   # transparent — page bg shows through
             "grid":     "#CCCCCC",
