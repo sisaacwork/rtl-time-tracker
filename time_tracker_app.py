@@ -3349,14 +3349,6 @@ def _build_bldg_snapshot() -> None:
         WHERE  b.deleted_at IS NULL
         GROUP  BY ci.name ORDER BY count DESC LIMIT 25
     """)
-    snap["geo_agg"] = q("""
-        SELECT a.name, COUNT(b.id) AS count
-        FROM   ctbuh_building b
-        JOIN   v2_cities ci ON b.city_id = ci.id
-        JOIN   agglomerations a ON ci.agglomeration_id = a.id
-        WHERE  b.deleted_at IS NULL
-        GROUP  BY a.name ORDER BY count DESC LIMIT 25
-    """)
 
     snap["generated_at"] = datetime.now().strftime("%b %d, %Y %H:%M")
     _bldg_snapshot_store()["data"] = snap
@@ -4083,7 +4075,6 @@ def view_building_kpis():
         df_regions  = _geo_data("geo_regions")
         df_countries = _geo_data("geo_countries")
         df_cities   = _geo_data("geo_cities")
-        df_agg      = _geo_data("geo_agg")
     else:
         geo_filt = filt_b_pie if geo_is_new else filt_b_update
         df_regions = _bldg_query(f"""
@@ -4104,17 +4095,9 @@ def view_building_kpis():
             WHERE  b.deleted_at IS NULL AND {geo_filt}
             GROUP  BY ci.name ORDER BY count DESC LIMIT 25
         """)
-        df_agg = _bldg_query(f"""
-            SELECT a.name, COUNT(b.id) AS count
-            FROM   ctbuh_building b
-            JOIN   v2_cities ci ON b.city_id = ci.id
-            JOIN   agglomerations a ON ci.agglomeration_id = a.id
-            WHERE  b.deleted_at IS NULL AND {geo_filt}
-            GROUP  BY a.name ORDER BY count DESC LIMIT 25
-        """)
 
-    geo_tab_region, geo_tab_country, geo_tab_city, geo_tab_agg_tab = st.tabs(
-        ["Regions", "Countries", "Cities", "Agglomerations"]
+    geo_tab_region, geo_tab_country, geo_tab_city = st.tabs(
+        ["Regions", "Countries", "Cities"]
     )
     with geo_tab_region:
         _hbar_geo(df_regions,  'name', 'count', f'{geo_label} Buildings by Region')
@@ -4122,8 +4105,6 @@ def view_building_kpis():
         _hbar_geo(df_countries, 'name', 'count', f'Top 30 Countries — {geo_label} Buildings')
     with geo_tab_city:
         _hbar_geo(df_cities,   'name', 'count', f'Top 25 Cities — {geo_label} Buildings')
-    with geo_tab_agg_tab:
-        _hbar_geo(df_agg,      'name', 'count', f'Top 25 Agglomerations — {geo_label} Buildings')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
