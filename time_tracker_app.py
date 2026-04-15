@@ -838,6 +838,7 @@ def _chart_colors() -> dict:
     if dark:
         return {
             "text":     CVU_WHITE,      # primary text / tick labels
+            "chart_labels": CVU_GRAY    # added for legibility
             "subtext":  CVU_GRAY,       # secondary / axis labels
             "plot_bg":  CVU_BLACK,      # chart plot area background
             "grid":     CVU_BORDER,     # grid lines
@@ -1244,7 +1245,7 @@ def view_team(df: pd.DataFrame):
                 marker_colors=[CVU_GREEN, CVU_PALETTE[0]],
                 hovertemplate="%{label}<br>%{value:.1f} hrs (%{percent})<extra></extra>",
                 textinfo="percent",
-                textfont=dict(color=c["text"], size=13, family="Inter, Arial, sans-serif"),
+                textfont=dict(color=c["chart_labels"], size=13, family="Inter, Arial, sans-serif"),
             ))
             figA.update_layout(**_chart_base(
                 height=300,
@@ -1275,7 +1276,7 @@ def view_team(df: pd.DataFrame):
                 marker_colors=[CVU_GREEN, CVU_PALETTE[1]],
                 hovertemplate="%{label}<br>%{value:.1f} hrs (%{percent})<extra></extra>",
                 textinfo="percent",
-                textfont=dict(color=c["text"], size=13, family="Inter, Arial, sans-serif"),
+                textfont=dict(color=c["chart_labels"], size=13, family="Inter, Arial, sans-serif"),
             ))
             figB.update_layout(**_chart_base(
                 height=300,
