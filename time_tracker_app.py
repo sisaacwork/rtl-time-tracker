@@ -3087,10 +3087,130 @@ def view_building_kpis():
 
     START = "2018-01-01"
     FIRST_YEAR = 2018
+    current_year = date.today().year
+    jan1_cy = f"{current_year}-01-01"
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # KEY METRICS
+    # ══════════════════════════════════════════════════════════════════════════
+    df_totals = _bldg_query(f"""
+        SELECT
+          COUNT(*) AS total,
+          SUM(CASE WHEN b.date_create >= '{jan1_cy}' THEN 1 ELSE 0 END) AS added_cy,
+          SUM(CASE WHEN b.date_update >= '{jan1_cy}'
+                    AND (b.date_create IS NULL OR b.date_create < '{jan1_cy}')
+               THEN 1 ELSE 0 END) AS updated_cy
+        FROM ctbuh_building b
+        WHERE b.deleted_at IS NULL
+    """)
+    df_ctry_cnt = _bldg_query("""
+        SELECT COUNT(DISTINCT b.country_id) AS n
+        FROM   ctbuh_building b
+        WHERE  b.deleted_at IS NULL
+          AND  b.country_id IS NOT NULL AND b.country_id != ''
+    """)
+    if not df_totals.empty:
+        total_bldgs = int(df_totals["total"].iloc[0])
+        added_cy    = int(df_totals["added_cy"].iloc[0])
+        updated_cy  = int(df_totals["updated_cy"].iloc[0])
+        ctry_cnt    = int(df_ctry_cnt["n"].iloc[0]) if not df_ctry_cnt.empty else 0
+        km1, km2, km3, km4 = st.columns(4)
+        km1.metric("Total Buildings",          f"{total_bldgs:,}")
+        km2.metric(f"Added in {current_year}", f"{added_cy:,}")
+        km3.metric(f"Updated in {current_year} (existing)", f"{updated_cy:,}")
+        km4.metric("Countries Represented",    f"{ctry_cnt:,}")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PROGRESS TO GOAL
+    # ══════════════════════════════════════════════════════════════════════════
+    ANNUAL_GOALS = {
+        2026: 47_250,
+        2027: 49_000,
+        2028: 51_000,
+        2029: 53_250,
+        2030: 55_750,
+    }
+    if current_year in ANNUAL_GOALS:
+        goal_target = ANNUAL_GOALS[current_year]
+
+        df_jan1 = _bldg_query(f"""
+            SELECT COUNT(*) AS total
+            FROM   ctbuh_building b
+            WHERE  b.deleted_at IS NULL
+              AND  b.date_create <= '{jan1_cy}'
+        """)
+        df_goal = _bldg_query("""
+            SELECT COUNT(*) AS total
+            FROM   ctbuh_building b
+            WHERE  b.deleted_at IS NULL
+        """)
+
+        if not df_goal.empty and not df_jan1.empty:
+            jan1_count    = int(df_jan1["total"].iloc[0])
+            current_total = int(df_goal["total"].iloc[0])
+            remaining     = max(goal_target - current_total, 0)
+            year_gap      = goal_target - jan1_count
+            gained        = current_total - jan1_count
+            pct           = round(gained / year_gap * 100, 1) if year_gap > 0 else 100.0
+
+            goal_col1, goal_col2 = st.columns([1, 2])
+            with goal_col1:
+                fig_goal = go.Figure(go.Pie(
+                    labels=["Progress this year", "Remaining to goal"],
+                    values=[gained, max(year_gap - gained, 0)],
+                    marker=dict(colors=[CVU_GREEN, CVU_SURFACE]),
+                    textinfo="none",
+                    hovertemplate="<b>%{label}</b><br>%{value:,}<extra></extra>",
+                    hole=0.5,
+                ))
+                fig_goal.add_annotation(
+                    text=f"<b>{pct}%</b>",
+                    x=0.5, y=0.5,
+                    font=dict(size=22, color=c["text"]),
+                    showarrow=False,
+                )
+                fig_goal.update_layout(**_chart_base(
+                    title=dict(
+                        text=f"{current_year} Progress to Goal ({goal_target:,} buildings)",
+                        font=dict(size=14, color=c["text"]),
+                    ),
+                    height=340,
+                    legend=dict(bgcolor="rgba(0,0,0,0)",
+                                font=dict(color=c["text"], size=11)),
+                    showlegend=True,
+                ))
+                st.plotly_chart(fig_goal, use_container_width=True,
+                                config={"displayModeBar": False})
+            with goal_col2:
+                st.markdown(
+                    f"""
+                    <div style='padding:24px 0 0 16px; color:{c["text"]}'>
+                        <p style='font-size:15px; margin-bottom:6px'>
+                            <b>Buildings as of Jan 1, {current_year}:</b> {jan1_count:,}
+                        </p>
+                        <p style='font-size:15px; margin-bottom:6px'>
+                            <b>Current buildings:</b> {current_total:,}
+                        </p>
+                        <p style='font-size:15px; margin-bottom:6px'>
+                            <b>{current_year} target:</b> {goal_target:,}
+                        </p>
+                        <p style='font-size:15px; margin-bottom:6px'>
+                            <b>Remaining:</b> {remaining:,}
+                        </p>
+                        <p style='font-size:18px; margin-top:12px'>
+                            <b>{pct}% to goal</b>
+                        </p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+    else:
+        st.info(f"No goal defined for {current_year}.")
+
+    st.divider()
 
     # ── Controls: filter mode + refresh ──────────────────────────────────────
     ctrl_col, _ = st.columns([3, 4])
-    current_year = date.today().year
 
     filter_mode = ctrl_col.radio(
         "Filter by:",
@@ -3134,18 +3254,20 @@ def view_building_kpis():
 
     # Build SQL date range clauses based on selection
     if filter_mode == "All years":
-        filt_b = f"b.date_create >= '{START}'"
-        filt_h = f"h.created_at  >= '{START}'"
-        filt_b_pie = "1=1"
+        filt_b        = f"b.date_create >= '{START}'"
+        filt_b_update = "1=1"
+        filt_h        = f"h.created_at  >= '{START}'"
+        filt_b_pie    = "1=1"
         filt_reno_date = (
             f"GREATEST(COALESCE(b.date_create,'1900-01-01'),"
             f"COALESCE(b.date_update,'1900-01-01')) >= '{START}'"
         )
     elif filter_mode == "Year":
         yr = selected_year
-        filt_b = f"b.date_create BETWEEN '{yr}-01-01' AND '{yr}-12-31'"
-        filt_h = f"h.created_at  BETWEEN '{yr}-01-01' AND '{yr}-12-31'"
-        filt_b_pie = f"b.date_create BETWEEN '{yr}-01-01' AND '{yr}-12-31'"
+        filt_b        = f"b.date_create BETWEEN '{yr}-01-01' AND '{yr}-12-31'"
+        filt_b_update = f"b.date_update BETWEEN '{yr}-01-01' AND '{yr}-12-31'"
+        filt_h        = f"h.created_at  BETWEEN '{yr}-01-01' AND '{yr}-12-31'"
+        filt_b_pie    = f"b.date_create BETWEEN '{yr}-01-01' AND '{yr}-12-31'"
         filt_reno_date = (
             f"GREATEST(COALESCE(b.date_create,'1900-01-01'),"
             f"COALESCE(b.date_update,'1900-01-01'))"
@@ -3154,9 +3276,10 @@ def view_building_kpis():
     else:  # Custom date range
         s = custom_start.strftime("%Y-%m-%d")
         e = custom_end.strftime("%Y-%m-%d")
-        filt_b = f"b.date_create BETWEEN '{s}' AND '{e}'"
-        filt_h = f"h.created_at  BETWEEN '{s}' AND '{e}'"
-        filt_b_pie = f"b.date_create BETWEEN '{s}' AND '{e}'"
+        filt_b        = f"b.date_create BETWEEN '{s}' AND '{e}'"
+        filt_b_update = f"b.date_update BETWEEN '{s}' AND '{e}'"
+        filt_h        = f"h.created_at  BETWEEN '{s}' AND '{e}'"
+        filt_b_pie    = f"b.date_create BETWEEN '{s}' AND '{e}'"
         filt_reno_date = (
             f"GREATEST(COALESCE(b.date_create,'1900-01-01'),"
             f"COALESCE(b.date_update,'1900-01-01'))"
@@ -3261,96 +3384,6 @@ def view_building_kpis():
     # SECTION 2 — BUILDINGS
     # ══════════════════════════════════════════════════════════════════════════
     st.markdown("### Buildings")
-
-    # ── Progress to Goal (pie) ────────────────────────────────────────────────
-    ANNUAL_GOALS = {
-        2026: 47_250,
-        2027: 49_000,
-        2028: 51_000,
-        2029: 53_250,
-        2030: 55_750,
-    }
-    goal_year = date.today().year
-    if goal_year in ANNUAL_GOALS:
-        goal_target = ANNUAL_GOALS[goal_year]
-        jan1 = f"{goal_year}-01-01"
-
-        # Count buildings as of Jan 1 (for label), and current live total for % to goal
-        df_jan1 = _bldg_query(f"""
-            SELECT COUNT(*) AS total
-            FROM   ctbuh_building b
-            WHERE  b.deleted_at IS NULL
-              AND  b.date_create <= '{jan1}'
-        """)
-        df_goal = _bldg_query("""
-            SELECT COUNT(*) AS total
-            FROM   ctbuh_building b
-            WHERE  b.deleted_at IS NULL
-        """)
-
-        if not df_goal.empty and not df_jan1.empty:
-            jan1_count = int(df_jan1["total"].iloc[0])
-            current    = int(df_goal["total"].iloc[0])
-            remaining  = max(goal_target - current, 0)
-            year_gap   = goal_target - jan1_count
-            gained     = current - jan1_count
-            pct        = round(gained / year_gap * 100, 1) if year_gap > 0 else 100.0
-
-            goal_col1, goal_col2 = st.columns([1, 2])
-            with goal_col1:
-                PALETTE_GOAL = [CVU_GREEN, CVU_SURFACE]
-                fig_goal = go.Figure(go.Pie(
-                    labels=["Progress this year", "Remaining to goal"],
-                    values=[gained, max(year_gap - gained, 0)],
-                    marker=dict(colors=PALETTE_GOAL),
-                    textinfo="none",
-                    hovertemplate="<b>%{label}</b><br>%{value:,}<extra></extra>",
-                    hole=0.5,
-                ))
-                fig_goal.add_annotation(
-                    text=f"<b>{pct}%</b>",
-                    x=0.5, y=0.5,
-                    font=dict(size=22, color=c["text"]),
-                    showarrow=False,
-                )
-                fig_goal.update_layout(**_chart_base(
-                    title=dict(
-                        text=f"{goal_year} Progress to Goal ({goal_target:,} buildings)",
-                        font=dict(size=14, color=c["text"]),
-                    ),
-                    height=340,
-                    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=c["text"], size=11)),
-                    showlegend=True,
-                ))
-                st.plotly_chart(fig_goal, use_container_width=True,
-                                config={"displayModeBar": False})
-            with goal_col2:
-                st.markdown(
-                    f"""
-                    <div style='padding:24px 0 0 16px; color:{c["text"]}'>
-                        <p style='font-size:15px; margin-bottom:6px'>
-                            <b>Buildings as of Jan 1, {goal_year}:</b> {jan1_count:,}
-                        </p>
-                        <p style='font-size:15px; margin-bottom:6px'>
-                            <b>Current buildings:</b> {current:,}
-                        </p>
-                        <p style='font-size:15px; margin-bottom:6px'>
-                            <b>{goal_year} target:</b> {goal_target:,}
-                        </p>
-                        <p style='font-size:15px; margin-bottom:6px'>
-                            <b>Remaining:</b> {remaining:,}
-                        </p>
-                        <p style='font-size:18px; margin-top:12px'>
-                            <b>{pct}% to goal</b>
-                        </p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-    else:
-        st.info(f"No goal defined for {goal_year}.")
-
-    st.divider()
 
     # ── 5. Buildings by function (pie) ────────────────────────────────────────
     # main_use_01/02 are enums — use exact value matching
@@ -3477,7 +3510,7 @@ def view_building_kpis():
           COUNT(*) AS count
         FROM   ctbuh_building b
         WHERE  b.deleted_at IS NULL
-          AND  {filt_b}
+          AND  {filt_b_pie}
         GROUP  BY status_group
         ORDER  BY count DESC
     """)
@@ -3501,7 +3534,7 @@ def view_building_kpis():
         WHERE  b.deleted_at IS NULL
           AND  b.height_architecture IS NOT NULL
           AND  b.height_architecture > 0
-          AND  {filt_b}
+          AND  {filt_b_pie}
         GROUP  BY height_band
         ORDER  BY MIN(b.height_architecture)
     """)
@@ -3791,8 +3824,17 @@ def view_building_kpis():
         ))
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-    geo_tab_region, geo_tab_country, geo_tab_city = st.tabs(
-        ["Regions", "Countries", "Cities"]
+    geo_view = st.radio(
+        "Show:",
+        ["New buildings (date added)", "Updated buildings (date modified)"],
+        horizontal=True,
+        key="bldg_geo_view",
+    )
+    geo_filt  = filt_b_pie if geo_view == "New buildings (date added)" else filt_b_update
+    geo_label = "New" if geo_view == "New buildings (date added)" else "Updated"
+
+    geo_tab_region, geo_tab_country, geo_tab_city, geo_tab_agg = st.tabs(
+        ["Regions", "Countries", "Cities", "Agglomerations"]
     )
 
     with geo_tab_region:
@@ -3801,11 +3843,11 @@ def view_building_kpis():
             FROM   ctbuh_building b
             JOIN   v2_regions r ON b.region_id = r.id
             WHERE  b.deleted_at IS NULL
-              AND  {filt_b}
+              AND  {geo_filt}
             GROUP  BY r.name
             ORDER  BY count DESC
         """)
-        _hbar_geo(df_regions, 'name', 'count', 'Buildings by Region')
+        _hbar_geo(df_regions, 'name', 'count', f'{geo_label} Buildings by Region')
 
     with geo_tab_country:
         df_countries = _bldg_query(f"""
@@ -3813,12 +3855,12 @@ def view_building_kpis():
             FROM   ctbuh_building b
             JOIN   v2_countries c ON b.country_id = c.id
             WHERE  b.deleted_at IS NULL
-              AND  {filt_b}
+              AND  {geo_filt}
             GROUP  BY c.name
             ORDER  BY count DESC
             LIMIT  30
         """)
-        _hbar_geo(df_countries, 'name', 'count', 'Top 30 Countries by Building Count')
+        _hbar_geo(df_countries, 'name', 'count', f'Top 30 Countries — {geo_label} Buildings')
 
     with geo_tab_city:
         df_cities = _bldg_query(f"""
@@ -3826,12 +3868,26 @@ def view_building_kpis():
             FROM   ctbuh_building b
             JOIN   v2_cities ci ON b.city_id = ci.id
             WHERE  b.deleted_at IS NULL
-              AND  {filt_b}
+              AND  {geo_filt}
             GROUP  BY ci.name
             ORDER  BY count DESC
             LIMIT  25
         """)
-        _hbar_geo(df_cities, 'name', 'count', 'Top 25 Cities by Building Count')
+        _hbar_geo(df_cities, 'name', 'count', f'Top 25 Cities — {geo_label} Buildings')
+
+    with geo_tab_agg:
+        df_agg = _bldg_query(f"""
+            SELECT a.name, COUNT(b.id) AS count
+            FROM   ctbuh_building b
+            JOIN   v2_cities ci  ON b.city_id = ci.id
+            JOIN   agglomerations a ON ci.agglomeration_id = a.id
+            WHERE  b.deleted_at IS NULL
+              AND  {geo_filt}
+            GROUP  BY a.name
+            ORDER  BY count DESC
+            LIMIT  25
+        """)
+        _hbar_geo(df_agg, 'name', 'count', f'Top 25 Agglomerations — {geo_label} Buildings')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
