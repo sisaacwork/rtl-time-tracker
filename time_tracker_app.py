@@ -1890,7 +1890,7 @@ def view_financial_kpis():
 
     txns_m = txns.copy()
     txns_m["month"] = txns_m["date"].dt.to_period("M").astype(str)
-    monthly_inc = (txns_m[txns_m["type"] == "Income"]
+    monthly_inc = (txns_m[(txns_m["type"] == "Income") & (txns_m["status"] == "Paid")]
                    .groupby("month")["amount"].sum())
     monthly_exp = (txns_m[txns_m["type"] == "Expense"]
                    .groupby("month")["amount"].sum())
