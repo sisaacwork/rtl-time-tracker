@@ -1215,7 +1215,7 @@ def view_team(df: pd.DataFrame):
 
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Total Hours Logged",       f"{fdf['hours'].sum():,.1f}")
-    k2.metric("Total Overtime Hrs Logged", f"{total_overtime:,.1f}")
+    k2.metric("Total Overtime Hours Logged", f"{total_overtime:,.1f}")
     k3.metric("Unique Task Codes",        str(fdf["task"].nunique()))
     k4.metric("Days with Entries",        str(fdf["date"].dt.date.nunique()))
     st.divider()
