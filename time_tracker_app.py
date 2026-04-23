@@ -1210,11 +1210,14 @@ def view_team(df: pd.DataFrame):
         return
 
     # ── KPI row ───────────────────────────────────────────────────────────────
+    daily_by_person  = fdf.groupby(["person", "date"])["hours"].sum()
+    total_overtime   = daily_by_person.apply(lambda x: max(0.0, x - 8.0)).sum()
+
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Total Hours Logged", f"{fdf['hours'].sum():,.1f}")
-    k2.metric("Staff Members",      str(fdf["person"].nunique()))
-    k3.metric("Unique Task Codes",  str(fdf["task"].nunique()))
-    k4.metric("Days with Entries",  str(fdf["date"].dt.date.nunique()))
+    k1.metric("Total Hours Logged",       f"{fdf['hours'].sum():,.1f}")
+    k2.metric("Total Overtime Hrs Logged", f"{total_overtime:,.1f}")
+    k3.metric("Unique Task Codes",        str(fdf["task"].nunique()))
+    k4.metric("Days with Entries",        str(fdf["date"].dt.date.nunique()))
     st.divider()
 
     # Assign consistent colors to categories and staff
