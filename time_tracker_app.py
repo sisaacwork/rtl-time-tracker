@@ -2996,6 +2996,10 @@ def _check_auth() -> bool:
                 admin_pwd = st.secrets["ADMIN_PASSWORD"]
             except Exception:
                 admin_pwd = "rtladmin"
+            try:
+                content_pwd = st.secrets["CONTENT_PASSWORD"]
+            except Exception:
+                content_pwd = "contentkpis"
 
             if pwd == staff_pwd:
                 st.session_state["authenticated"] = True
@@ -3004,6 +3008,10 @@ def _check_auth() -> bool:
             elif pwd == admin_pwd:
                 st.session_state["authenticated"] = True
                 st.session_state["role"] = "admin"
+                st.rerun()
+            elif pwd == content_pwd:
+                st.session_state["authenticated"] = True
+                st.session_state["role"] = "content"
                 st.rerun()
             else:
                 st.error("Incorrect password.")
@@ -4129,6 +4137,29 @@ def main():
         return
 
     role = st.session_state.get("role", "staff")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # CONTENT ROUTE — Content KPIs only
+    # ══════════════════════════════════════════════════════════════════════════
+    if role == "content":
+        with st.sidebar:
+            st.title("RTL Dashboard")
+            st.divider()
+            chart_mode = st.radio(
+                "Chart Colors",
+                options=["Dark", "Light"],
+                index=0 if st.session_state["dark_mode"] else 1,
+                key="content_chart_mode",
+                horizontal=True,
+            )
+            st.session_state["dark_mode"] = (chart_mode == "Dark")
+            st.divider()
+            if st.button("Sign Out", use_container_width=True):
+                st.session_state.clear()
+                st.rerun()
+        st.title("Content KPIs")
+        view_content_kpis()
+        return
 
     # ══════════════════════════════════════════════════════════════════════════
     # ADMIN (C-LEVEL) ROUTE — Time KPIs or Financial KPIs
